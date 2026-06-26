@@ -1,0 +1,20 @@
+# Dev image — dependencies pre-installed, source injected via volume at runtime.
+FROM python:3.13-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Install dependencies (including dev extras) for editor support and debugging
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --extra dev --no-install-project
+
+# Install debugpy for remote debugging
+RUN uv pip install debugpy
+
+# Activate venv so python and debugpy pick up the venv packages
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Source code will be mounted from the host via docker-compose volume
+
+CMD ["sleep", "infinity"]

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environment
+.venv/
+.codex/
+
+# Secrets (DO NOT include in images)
+.env
+
+# Version control
+.git/
+.gitignore
+
+# Logs
+log/
+*.log
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Claude / Trellis (project-specific tooling)
+.claude/
+.trellis/
+
+# Testing / Coverage
+.coverage
+.pytest_cache/
+.ruff_cache/
+.coverage.*
+htmlcov/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

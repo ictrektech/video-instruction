@@ -1,0 +1,65 @@
+version: 1
+disable_existing_loggers: False
+formatters:
+  default:
+    format: '[magenta]%(request_id)s[/] [cyan]%(source_file)s:%(source_line)d[/] | %(message)s'
+  access:
+    format: '[magenta]%(request_id)s[/] %(message)s | %(client_addr)s "%(request_line)s" %(status_code)d %(status_phrase)s %(duration_ms).2fms'
+  file:
+    format: '[%(levelname)s] %(asctime)s %(request_id)s [%(name)s] %(filename)s:%(lineno)d %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+
+filters:
+  exc_origin:
+    (): app.core.logging.logging_filters.ExceptionOriginFilter
+  request_id:
+    (): app.core.logging.logging_filters.RequestIdFilter
+  access_defaults:
+    (): app.core.logging.logging_filters.AccessLogDefaultsFilter
+
+handlers:
+  default:
+    formatter: default
+    class: rich.logging.RichHandler
+    filters: [exc_origin, request_id]
+    rich_tracebacks: False
+    tracebacks_show_locals: False
+    show_time: True
+    show_level: True
+    show_path: False
+    log_time_format: '%H:%M:%S'
+    markup: True
+  access:
+    formatter: access
+    class: rich.logging.RichHandler
+    filters: [request_id, access_defaults]
+    rich_tracebacks: False
+    show_time: True
+    show_level: True
+    show_path: False
+    log_time_format: '%H:%M:%S'
+    markup: True
+  server_file:
+    formatter: file
+    class: logging.handlers.RotatingFileHandler
+    filename: log/server.log
+    maxBytes: 10485760
+    backupCount: 5
+    encoding: utf-8
+    filters: [request_id]
+    delay: true
+
+loggers:
+  app.access:
+    # level: 由 settings.log_level 动态覆盖
+    handlers: [access, server_file]
+    propagate: no
+  uvicorn.error:
+    handlers: [default, server_file]
+    propagate: no
+  uvicorn.access:
+    handlers: []
+    propagate: no
+root:
+  handlers: [default, server_file]
+  propagate: no
