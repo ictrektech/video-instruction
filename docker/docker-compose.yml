@@ -1,25 +1,47 @@
 name: video-instruction
 
 services:
-  app:
+  scene-detection:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction:${IMAGE_TAG:-latest}
-    container_name: video-instruction-server
+    image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction-detection:${IMAGE_TAG:-latest}
+    container_name: video-instruction-detection
+    command: uv run scene-detect
     ports:
-      - "${APP_PORT:-8910}:8910"
+      - "${SCENE_DETECTION_PORT:-8001}:8910"
     env_file:
       - ../src/.env
     environment:
       APP_ENV: prod
+      APP_PORT: 8910
     volumes:
       - ../log:/app/log
+      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
     networks:
       - video-instruction-net
     restart: unless-stopped
 
-  app_log:
+  structure:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction-structure:${IMAGE_TAG:-latest}
+    container_name: video-instruction-structure
+    command: uv run structure
+    ports:
+      - "${structure_PORT:-8910}:8910"
+    env_file:
+      - ../src/.env
+    environment:
+      APP_ENV: prod
+      APP_PORT: 8910
+    volumes:
+      - ../log:/app/log
+      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+    networks:
+      - video-instruction-net
+    restart: unless-stopped
 
 networks:
   video-instruction-net:

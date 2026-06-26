@@ -11,8 +11,6 @@ services:
       - ../src:/app/src
       - ../config:/app/config
       - ../log:/app/log
-      - ../alembic.ini:/app/alembic.ini
-      - ../alembic:/app/alembic
       # README.md for hatchling build
       - ../README.md:/app/README.md
       # Persist .venv across restarts (but not on host — avoid platform mismatch)
@@ -27,22 +25,33 @@ services:
       - video-instruction-dev-net
     restart: unless-stopped
 
-  app-server:
+  scene-detection:
     extends: app-base
-    container_name: dev-video-instruction
-    profiles: ["server"]
+    container_name: dev-video-detection
+    profiles: ["detection"]
     ports:
-      - "${APP_PORT:-8910}:8910"
-      - "${DEV_DEBUG_PORT:-5678}:5678"
+      - "${SCENE_DETECTION_PORT:-8001}:8910"
     command:
       - bash
       - -c
       - |
         uv sync --frozen --extra dev
-        uv pip install debugpy
-        exec uv run -m debugpy --listen 0.0.0.0:5678 -m app.__main__
+        exec uv run scene-detect
 
-  video-instruction-venv:
+  structure:
+    extends: app-base
+    container_name: dev-video-structure
+    profiles: ["structure"]
+    ports:
+      - "${structure_PORT:-8910}:8910"
+    command:
+      - bash
+      - -c
+      - |
+        uv sync --frozen --extra dev
+        exec uv run structure
+
+video-instruction-venv:
 
 networks:
   video-instruction-dev-net:

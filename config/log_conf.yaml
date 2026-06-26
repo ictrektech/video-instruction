@@ -11,11 +11,11 @@ formatters:
 
 filters:
   exc_origin:
-    (): app.core.logging.logging_filters.ExceptionOriginFilter
+    (): shared.core.logging.logging_filters.ExceptionOriginFilter
   request_id:
-    (): app.core.logging.logging_filters.RequestIdFilter
+    (): shared.core.logging.logging_filters.RequestIdFilter
   access_defaults:
-    (): app.core.logging.logging_filters.AccessLogDefaultsFilter
+    (): shared.core.logging.logging_filters.AccessLogDefaultsFilter
 
 handlers:
   default:
@@ -50,7 +50,7 @@ handlers:
     delay: true
 
 loggers:
-  app.access:
+  shared.access:
     # level: 由 settings.log_level 动态覆盖
     handlers: [access, server_file]
     propagate: no

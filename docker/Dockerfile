@@ -11,13 +11,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Copy application code
 COPY src/ src/
 COPY config/ config/
-COPY alembic.ini ./
-COPY alembic/ alembic/
 COPY README.md ./
 RUN uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8910
-
-CMD ["serve"]
