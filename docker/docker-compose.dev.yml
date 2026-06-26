@@ -1,4 +1,4 @@
-name: fastapi-template-dev
+name: video-instruction-dev
 
 services:
   app-base:
@@ -16,27 +16,20 @@ services:
       # README.md for hatchling build
       - ../README.md:/app/README.md
       # Persist .venv across restarts (but not on host — avoid platform mismatch)
-      - fastapi-template-venv:/app/.venv
+      - video-instruction-venv:/app/.venv
     env_file:
       - ../src/.env
     environment:
       APP_ENV: dev
-      DB_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/devdb
-      REDIS_URL: redis://redis:6379/0
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
     networks:
-      - fastapi-template-dev-net
+      - video-instruction-dev-net
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   app-server:
     extends: app-base
-    container_name: dev-fastapi-template
+    container_name: dev-video-instruction
     profiles: ["server"]
     ports:
       - "${APP_PORT:-8910}:8910"
@@ -49,46 +42,8 @@ services:
         uv pip install debugpy
         exec uv run -m debugpy --listen 0.0.0.0:5678 -m app.__main__
 
-  postgres:
-    image: postgres:18-alpine
-    container_name: dev-fastapi-template-postgres
-    restart: unless-stopped
-    networks:
-      - fastapi-template-dev-net
-    ports:
-      - "${POSTGRES_PORT:-6432}:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: devdb
-    volumes:
-      - dev_postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d devdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  redis:
-    image: redis:7-alpine
-    container_name: dev-fastapi-template-redis
-    restart: unless-stopped
-    networks:
-      - fastapi-template-dev-net
-    ports:
-      - "${REDIS_PORT:-6380}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  fastapi-template-venv:
-  dev_postgres_data:
-    name: dev-fastapi-template-postgres-data
+  video-instruction-venv:
 
 networks:
-  fastapi-template-dev-net:
+  video-instruction-dev-net:
     driver: bridge

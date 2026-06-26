@@ -2,9 +2,8 @@ from logging import getLogger
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from slowapi.errors import RateLimitExceeded
 
-from app.core.errors.error_codes import BusinessErrorCode, ErrorCode
+from app.core.errors.error_codes import ErrorCode
 from app.core.errors.error_utils import exc_origin
 from app.core.errors.exceptions import ApiException
 from app.core.settings import settings
@@ -30,15 +29,6 @@ def add_exception_handlers(application: FastAPI) -> None:
             },
         )
         payload = ResponseDTO.fail(code=exc.code, msg=exc.message)
-        return JSONResponse(status_code=200, content=payload.model_dump())
-
-    @application.exception_handler(RateLimitExceeded)
-    async def rate_limit_handler(req: Request, exc: RateLimitExceeded) -> JSONResponse:
-        logger.warning(f"rate_limit_exceeded | {_request_context(req)}")
-        payload = ResponseDTO.fail(
-            code=BusinessErrorCode.RATE_LIMIT_EXCEEDED.code,
-            msg=BusinessErrorCode.RATE_LIMIT_EXCEEDED.message,
-        )
         return JSONResponse(status_code=200, content=payload.model_dump())
 
     @application.exception_handler(Exception)

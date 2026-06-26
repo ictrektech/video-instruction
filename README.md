@@ -1,4 +1,4 @@
-# fastapi-template
+# video-instruction
 
 > 🚀 **GitHub Template** — 点击 "Use this template" 即可创建新项目。
 >
@@ -19,7 +19,7 @@
 
 ---
 
-FastAPI 项目模板，基于 Python 3.13 + PostgreSQL + Redis。
+video-instruction - FastAPI project，基于 Python 3.13 + PostgreSQL + Redis。
 
 ## 技术栈
 

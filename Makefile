@@ -1,4 +1,4 @@
-# fastapi-template Makefile
+# video-instruction Makefile
 # Dev:  docker/docker-compose.dev.yml（源码 volume 挂载 + debugpy + --reload）
 # Prod: docker/docker-compose.yml
 #
@@ -8,8 +8,8 @@
 #   make tag          打版本标签
 #   make push         推送镜像到 registry
 
-REGISTRY ?= registry.example.com
-IMAGE_NAME ?= fastapi-template
+REGISTRY ?= swr.cn-southwest-2.myhuaweicloud.com/ictrek
+IMAGE_NAME ?= video-instruction
 OPTS  ?=  # 传给 docker/compose 的额外参数（如 -d、--no-cache）
 
 DEV_COMPOSE  := docker/docker-compose.dev.yml

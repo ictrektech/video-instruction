@@ -1,71 +1,26 @@
-name: fastapi-template
+name: video-instruction
 
 services:
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: ${REGISTRY:-registry.example.com}/fastapi-template:${IMAGE_TAG:-latest}
-    container_name: fastapi-template-server
+    image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction:${IMAGE_TAG:-latest}
+    container_name: video-instruction-server
     ports:
       - "${APP_PORT:-8910}:8910"
     env_file:
       - ../src/.env
     environment:
       APP_ENV: prod
-      DB_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/devdb
-      REDIS_URL: redis://redis:6379/0
     volumes:
       - ../log:/app/log
     networks:
-      - fastapi-template-net
+      - video-instruction-net
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
-  postgres:
-    image: postgres:18-alpine
-    container_name: fastapi-template-postgres
-    restart: unless-stopped
-    networks:
-      - fastapi-template-net
-    ports:
-      - "${POSTGRES_PORT:-6432}:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: devdb
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d devdb"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  redis:
-    image: redis:7-alpine
-    container_name: fastapi-template-redis
-    restart: unless-stopped
-    networks:
-      - fastapi-template-net
-    ports:
-      - "${REDIS_PORT:-6380}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  postgres_data:
-    name: fastapi-template-postgres-data
   app_log:
 
 networks:
-  fastapi-template-net:
+  video-instruction-net:
     driver: bridge
