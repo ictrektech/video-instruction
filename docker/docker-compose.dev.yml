@@ -1,11 +1,16 @@
 name: video-instruction-dev
 
 services:
-  app-base:
-    profiles: ["_base"]
+  scene-detection:
     build:
       context: ..
       dockerfile: docker/Dockerfile.dev
+      args:
+        SERVICE: scene-detect
+    container_name: dev-video-detection
+    profiles: ["detection"]
+    ports:
+      - "${SCENE_DETECTION_PORT:-8910}:8910"
     volumes:
       # Source code — mounted live so uvicorn --reload picks up changes
       - ../src:/app/src
@@ -13,45 +18,68 @@ services:
       - ../log:/app/log
       # README.md for hatchling build
       - ../README.md:/app/README.md
-      # Persist .venv across restarts (but not on host — avoid platform mismatch)
-      - video-instruction-venv:/app/.venv
+      # Persist .venv across restarts (own volume per service)
+      - video-instruction-venv-detection:/app/.venv
+      # Video data volume
+      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
     env_file:
       - ../src/.env
     environment:
       APP_ENV: dev
+      DATA_BASE_PATH: /data/video-structured
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
     networks:
       - video-instruction-dev-net
     restart: unless-stopped
-
-  scene-detection:
-    extends: app-base
-    container_name: dev-video-detection
-    profiles: ["detection"]
-    ports:
-      - "${SCENE_DETECTION_PORT:-8001}:8910"
     command:
       - bash
       - -c
       - |
-        uv sync --frozen --extra dev
+        set -e
+        uv sync --frozen --extra dev --extra scene-detect
         exec uv run scene-detect
 
   structure:
-    extends: app-base
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+      args:
+        SERVICE: structure
     container_name: dev-video-structure
     profiles: ["structure"]
     ports:
-      - "${structure_PORT:-8910}:8910"
+      - "${STRUCTURE_PORT:-8911}:8911"
+    volumes:
+      - ../src:/app/src
+      - ../config:/app/config
+      - ../log:/app/log
+      - ../README.md:/app/README.md
+      # Persist .venv across restarts (own volume per service)
+      - video-instruction-venv-structure:/app/.venv
+      # Video data volume
+      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+    env_file:
+      - ../src/.env
+    environment:
+      APP_ENV: dev
+      DATA_BASE_PATH: /data/video-structured
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - video-instruction-dev-net
+    restart: unless-stopped
     command:
       - bash
       - -c
       - |
-        uv sync --frozen --extra dev
+        set -e
+        uv sync --frozen --extra dev --extra structure
         exec uv run structure
 
-video-instruction-venv:
+volumes:
+  video-instruction-venv-detection:
+  video-instruction-venv-structure:
 
 networks:
   video-instruction-dev-net:

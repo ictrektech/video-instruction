@@ -1,13 +1,32 @@
 # Dev image — dependencies pre-installed, source injected via volume at runtime.
+# SERVICE build arg: scene-detect | structure | all (default)
 FROM python:3.13-slim
+ARG SERVICE=all
+
+# OpenCV (scenedetect → opencv-python) needs system graphics libs
+RUN sed -i \
+    -e 's|http://deb.debian.org/debian$|https://mirrors.tuna.tsinghua.edu.cn/debian|' \
+    -e 's|http://deb.debian.org/debian-security$|https://mirrors.tuna.tsinghua.edu.cn/debian-security|' \
+    /etc/apt/sources.list.d/debian.sources
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0t64 \
+    libxcb1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Install dependencies (including dev extras) for editor support and debugging
+# Install dev + service-specific extras at build time.
+# The named-volume .venv persists across restarts for speed.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --extra dev --no-install-project
+RUN if [ "$SERVICE" = "all" ]; then \
+      uv sync --frozen --all-extras --no-install-project; \
+    else \
+      uv sync --frozen --extra dev --extra "$SERVICE" --no-install-project; \
+    fi
 
 # Install debugpy for remote debugging
 RUN uv pip install debugpy

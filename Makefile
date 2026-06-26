@@ -32,15 +32,15 @@ help:  ## 显示帮助
 .PHONY: dev dev-down dev-logs dev-build dev-ps
 
 dev:       ## [Dev] 启动服务（加 OPTS=-d 后台运行）
-	$(DEV_CMD) --profile server up $(OPTS)
+	$(DEV_CMD) --profile detection --profile structure up $(OPTS)
 dev-down:  ## [Dev] 停止服务
 	$(DEV_CMD) down
 dev-logs:  ## [Dev] 查看日志
-	$(DEV_CMD) --profile server logs -f
+	$(DEV_CMD) --profile detection --profile structure logs -f
 dev-build: ## [Dev] 构建镜像
-	$(DEV_CMD) build $(OPTS)
+	$(DEV_CMD) build scene-detection structure $(OPTS)
 dev-ps:    ## [Dev] 查看服务状态
-	$(DEV_CMD) --profile server ps
+	$(DEV_CMD) --profile detection --profile structure ps
 
 # ── Prod ──
 

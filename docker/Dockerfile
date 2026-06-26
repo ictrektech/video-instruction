@@ -1,8 +1,18 @@
 FROM python:3.13-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0t64 \
+    libxcb1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
+
+# Build arg: service name → install only that service's extra deps
+ARG SERVICE=all
 
 # Install dependencies first (layer caching)
 COPY pyproject.toml uv.lock ./
@@ -12,7 +22,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ src/
 COPY config/ config/
 COPY README.md ./
-RUN uv sync --frozen --no-dev
+# Install service-specific extras (or all if SERVICE=all)
+RUN if [ "$SERVICE" = "all" ]; then \
+      uv sync --frozen --no-dev --all-extras; \
+    else \
+      uv sync --frozen --no-dev --extra "$SERVICE"; \
+    fi
 
 ENV PATH="/app/.venv/bin:$PATH"
 

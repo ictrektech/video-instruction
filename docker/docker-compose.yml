@@ -5,6 +5,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        SERVICE: scene-detect
     image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction-detection:${IMAGE_TAG:-latest}
     container_name: video-instruction-detection
     command: uv run scene-detect
@@ -15,6 +17,7 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8910
+      DATA_BASE_PATH: /data/video-structured
     volumes:
       - ../log:/app/log
       - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
@@ -26,6 +29,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        SERVICE: structure
     image: ${REGISTRY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek}/video-instruction-structure:${IMAGE_TAG:-latest}
     container_name: video-instruction-structure
     command: uv run structure
@@ -36,6 +41,7 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8910
+      DATA_BASE_PATH: /data/video-structured
     volumes:
       - ../log:/app/log
       - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
