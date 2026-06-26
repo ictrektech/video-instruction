@@ -10,6 +10,7 @@ from logging import getLogger
 import numpy as np
 from scenedetect import ContentDetector, SceneManager
 from scenedetect.frame_timecode import FrameTimecode
+from scenedetect.video_stream import VideoStream
 
 from scene_detect.schemas.scene import SceneBoundary, SceneMetadata, WarningDTO
 
@@ -116,58 +117,15 @@ def detect_scenes(
 
 def _extract_metadata(video_path: str) -> SceneMetadata:
     """用 ffprobe 提取视频元信息。"""
-    import json
+    from shared.core.ffprobe import query_video_metadata
 
-    cmd = [
-        shutil.which("ffmpeg") or "ffmpeg",
-        "-v",
-        "quiet",
-        "-print_format",
-        "json",
-        "-show_format",
-        "-show_streams",
-        video_path,
-    ]
-    result = subprocess.run(  # noqa: S603 — video_path validated upstream from upload system
-        cmd, capture_output=True, text=True, check=False
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"ffprobe 失败: {result.stderr.strip()}")
-
-    probe = json.loads(result.stdout or "{}")
-    video_stream = next(
-        (s for s in probe.get("streams", []) if s.get("codec_type") == "video"),
-        None,
-    )
-    if not video_stream:
-        raise ValueError("未找到视频流")
-
-    fmt = probe.get("format", {})
-
-    def _parse_rate(rate: str | None) -> float:
-        if not rate or rate == "0/0":
-            return 0.0
-        try:
-            return float(Fraction(rate))
-        except (ValueError, ZeroDivisionError):
-            return 0.0
-
-    fps = _parse_rate(video_stream.get("avg_frame_rate")) or _parse_rate(
-        video_stream.get("r_frame_rate")
-    )
-    duration = float(video_stream.get("duration") or fmt.get("duration") or 0)
-    total_frames_str = video_stream.get("nb_frames")
-    if not total_frames_str:
-        total_frames = int(round(fps * duration)) if fps > 0 and duration > 0 else 0
-    else:
-        total_frames = int(float(total_frames_str))
-
+    info = query_video_metadata(video_path)
     return SceneMetadata(
-        fps=fps,
-        total_frames=total_frames,
-        duration=duration,
-        width=int(video_stream.get("width") or 0),
-        height=int(video_stream.get("height") or 0),
+        fps=info["fps"],
+        total_frames=info["total_frames"],
+        duration=info["duration"],
+        width=info["width"],
+        height=info["height"],
     )
 
 
@@ -177,12 +135,14 @@ def _frame_to_time(frame: int, fps: float) -> float:
     return round(frame / fps, 6)
 
 
-class FfmpegVideoStream:
+class FfmpegVideoStream(VideoStream):
     """PySceneDetect 兼容的 VideoStream，基于单线程 ffmpeg 管道。
 
     使用 ``-threads 1`` 限制 h264 解码器为单线程，避免 OpenCV 后端
     无节制占用 CPU（700%+ 峰值）。
     """
+
+    BACKEND_NAME = "ffmpeg_pipe"
 
     def __init__(
         self,
@@ -207,7 +167,7 @@ class FfmpegVideoStream:
         try:
             self._proc = subprocess.Popen(  # noqa: S603 — video_path validated upstream from upload system
                 [
-                    shutil.which("ffprobe") or "ffprobe",
+                    shutil.which("ffmpeg") or "ffmpeg",
                     "-nostdin",
                     "-loglevel",
                     "error",
@@ -239,10 +199,24 @@ class FfmpegVideoStream:
         if self._total_frames > 0:
             self._duration = self._timecode_base + self._total_frames
 
-        self.name = os.path.basename(video_path)
-        self.path = video_path
-        self.is_seekable = False
-        self.aspect_ratio = 1.0
+        self._name = os.path.basename(video_path)
+        self._path = video_path
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def is_seekable(self) -> bool:
+        return False
+
+    @property
+    def aspect_ratio(self) -> float:
+        return 1.0
 
     def read(self, decode: bool = True):
         if self._r_fd < 0:
@@ -281,6 +255,16 @@ class FfmpegVideoStream:
     @property
     def base_timecode(self) -> FrameTimecode:
         return self._timecode_base
+
+    @property
+    def position_ms(self) -> float | None:
+        return self._frame_number / self._fps * 1000 if self._fps > 0 else None
+
+    def reset(self) -> None:
+        self.close()
+
+    def seek(self, target: float | str | FrameTimecode) -> None:  # type: ignore[override]
+        raise NotImplementedError("FfmpegVideoStream does not support seeking")
 
     def close(self):
         if self._r_fd >= 0:

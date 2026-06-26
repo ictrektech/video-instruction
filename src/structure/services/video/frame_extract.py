@@ -140,12 +140,6 @@ def _sample_frames(
     return [int(round(s + span * i / (count - 1))) for i in range(count)]
 
 
-def _frame_to_time(frame: int, fps: float) -> float:
-    if fps <= 0:
-        return 0.0
-    return round(frame / fps, 6)
-
-
 def _build_grid(
     video_path: str,
     frame_indices: list[int],
