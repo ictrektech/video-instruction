@@ -23,17 +23,20 @@ router = APIRouter()
     "/detect",
     response_model=ResponseDTO[DetectResult],
     summary="场景识别",
-    description="传入视频绝对路径，使用 PySceneDetect 检测场景边界，返回场景开始/结束帧。",
+    description="传入视频路径，使用 PySceneDetect 检测场景边界，返回场景开始/结束帧。",
 )
 async def detect_scene(
     command: DetectRequest,
 ) -> ResponseDTO[DetectResult]:
     """对视频执行场景识别。
 
+    - ``video_path`` 为相对于 ``data_base_path`` 的路径（也支持绝对路径）。
     - 只检测场景边界，不进行任何结构化操作。
     - 返回场景列表（含 start_frame / end_frame / start_time / end_time）。
     """
     video_path = Path(command.video_path)
+    if not video_path.is_absolute():
+        video_path = Path(settings.data_base_path) / video_path
     if not video_path.is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, str(video_path))
 

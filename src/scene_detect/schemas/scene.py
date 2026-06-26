@@ -33,7 +33,7 @@ class WarningDTO(BaseModel):
 class DetectRequest(BaseModel):
     """场景检测请求参数"""
 
-    video_path: str = Field(description="视频文件绝对路径")
+    video_path: str = Field(description="视频文件路径，相对于 data_base_path（也支持绝对路径）")
     threshold: float | None = Field(default=None, description="场景检测阈值，默认使用全局配置")
     max_scenes: int | None = Field(default=None, description="最大场景数，默认使用全局配置")
 

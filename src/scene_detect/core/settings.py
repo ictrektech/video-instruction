@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     log_config_path: str = Field("config/log_conf.yaml", description="日志配置路径")
     cors_origins: str = Field("*", description="CORS 允许的源，多个用逗号分隔")
 
+    data_base_path: str = Field("/data/video-structured", description="视频文件基础路径前缀")
     video_scene_threshold: float = Field(27.0, description="场景检测阈值（越大越不敏感）")
     video_max_scenes: int = Field(200, description="最大场景数限制")
 
