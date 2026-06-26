@@ -10,9 +10,6 @@ dependencies = [
   "pydantic-settings>=2.6.0",
   "pyyaml>=6.0.3",
   "rich>=13.7.0",
-  "scenedetect>=0.7",
-  "Pillow>=11.0.0",
-  "numpy>=1.26.0",
 ]
 
 [build-system]
@@ -27,6 +24,13 @@ scene-detect = "scene_detect.__main__:main"
 structure = "structure.__main__:main"
 
 [project.optional-dependencies]
+scene-detect = [
+  "scenedetect>=0.7",
+]
+structure = [
+  "Pillow>=11.0.0",
+  "numpy>=1.26.0",
+]
 dev = [
   "pytest>=8.0.0",
   "pytest-asyncio>=0.24.0",
