@@ -79,7 +79,5 @@ def query_video_metadata(
         "total_frames": total_frames,
         "codec": video_stream.get("codec_name", ""),
         "bitrate": int(float(fmt.get("bit_rate") or video_stream.get("bit_rate") or 0)),
-        "has_audio": any(
-            s.get("codec_type") == "audio" for s in probe.get("streams", [])
-        ),
+        "has_audio": any(s.get("codec_type") == "audio" for s in probe.get("streams", [])),
     }

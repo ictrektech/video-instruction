@@ -4,9 +4,14 @@
 #
 # 用法:
 #   make dev          启动 dev 服务
-#   make build        构建 prod 镜像
-#   make tag          打版本标签
-#   make push         推送镜像到 registry
+#   make build        构建 prod 镜像（自动带平台标签）
+#   make tag          将构建版本另标为 latest-$(PLATFORM)
+#   make push         推送版本标签 + latest-$(PLATFORM) 到 registry
+#
+# 版本:
+#   IMAGE_TAG 环境变量覆盖镜像标签（默认 latest）
+#   BUILD_TAG 自动追加平台前缀：amd64_20260629_abc1234 / arm64_20260629_abc1234
+#   不同平台构建互不覆盖，可共存于 registry
 
 REGISTRY ?= swr.cn-southwest-2.myhuaweicloud.com/ictrek
 IMAGE_NAME ?= video-instruction
@@ -20,7 +25,8 @@ PROD_CMD     := docker compose -f $(PROD_COMPOSE)
 
 GIT_HASH   := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date +%Y%m%d)
-BUILD_TAG  := $(BUILD_DATE)_$(GIT_HASH)
+PLATFORM   := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+BUILD_TAG  := $(PLATFORM)_$(BUILD_DATE)_$(GIT_HASH)
 
 .DEFAULT_GOAL := help
 help:  ## 显示帮助
@@ -46,13 +52,18 @@ dev-ps:    ## [Dev] 查看服务状态
 
 .PHONY: build tag push prod prod-down prod-logs
 
-build:  ## [Prod] 构建镜像（自动打版本标签）
+build:  ## [Prod] 构建镜像 + 更新 latest-$(PLATFORM)
 	IMAGE_TAG=$(BUILD_TAG) $(PROD_CMD) build $(OPTS)
-tag:  ## [Prod] 将构建的版本镜像设为 latest
-	docker tag $(REGISTRY)/$(IMAGE_NAME):$(BUILD_TAG) $(REGISTRY)/$(IMAGE_NAME):latest
-push:  ## [Prod] 推送镜像到 registry
-	docker push $(REGISTRY)/$(IMAGE_NAME):$(BUILD_TAG)
-	docker push $(REGISTRY)/$(IMAGE_NAME):latest
+	docker tag $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
+	docker tag $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
+tag:  ## [Prod] 将构建的版本镜像设为 latest-$(PLATFORM)（多平台互不覆盖）
+	docker tag $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
+	docker tag $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
+push:  ## [Prod] 推送版本标签 + 平台 latest 到 registry
+	docker push $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)
+	docker push $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)
+	docker push $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
+	docker push $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
 prod:  ## [Prod] 启动服务（加 OPTS=-d 后台运行）
 	$(PROD_CMD) up $(OPTS)
 prod-down:  ## [Prod] 停止服务

@@ -11,7 +11,7 @@ services:
     container_name: video-instruction-detection
     command: uv run scene-detect
     ports:
-      - "${SCENE_DETECTION_PORT:-8001}:8910"
+      - "${SCENE_DETECTION_PORT:-8910}:8910"
     env_file:
       - ../src/.env
     environment:
@@ -35,12 +35,12 @@ services:
     container_name: video-instruction-structure
     command: uv run structure
     ports:
-      - "${structure_PORT:-8910}:8910"
+      - "${structure_PORT:-8911}:8911"
     env_file:
       - ../src/.env
     environment:
       APP_ENV: prod
-      APP_PORT: 8910
+      APP_PORT: 8911
       DATA_BASE_PATH: /data/video-structured
     volumes:
       - ../log:/app/log
