@@ -97,6 +97,8 @@ async def structure(
             metadata,
             call_work_dir,
             settings.video_grid_tile_max_height,
+            cmd.grid_rows,
+            cmd.grid_cols,
             cache_dir,
         )
         for grid_item, _warnings in grid_results:

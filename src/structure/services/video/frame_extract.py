@@ -22,9 +22,11 @@ def extract_scene_grids(
     metadata: dict,
     work_dir: Path,
     tile_max_height: int,
+    grid_rows: int = 3,
+    grid_cols: int = 3,
     cache_dir: Path | None = None,
 ) -> list[tuple[SceneDTO, list[WarningDTO]]]:
-    """为每个场景采样 9 帧并拼接为 3x3 九宫格。
+    """为每个场景采样帧并拼接为 rows x cols 网格图。
 
     scene_bounds 为 (start_frame, end_frame, start_time, end_time) 四元组。
     """
@@ -38,8 +40,9 @@ def extract_scene_grids(
         scene_warnings: list[WarningDTO] = []
 
         try:
+            count = grid_rows * grid_cols
             frame_indices = _sample_frames(
-                start_frame, end_frame, 9, start_ratio=0.05, end_ratio=0.95
+                start_frame, end_frame, count, start_ratio=0.05, end_ratio=0.95
             )
 
             grid_path = grids_dir / f"{scene_id}.jpg"
@@ -50,6 +53,8 @@ def extract_scene_grids(
                 fps,
                 grid_path,
                 tile_max_height,
+                grid_cols,
+                grid_rows,
             )
 
             # 若指定了缓存目录，将 grid 图片持久化到缓存路径
@@ -144,8 +149,21 @@ def _build_grid(
     fps: float,
     out_path: Path,
     tile_max_height: int,
+    cols: int = 3,
+    rows: int = 3,
 ) -> None:
-    """用 ffmpeg 取帧，PIL 拼成 3x3 九宫格保存为 JPEG。"""
+    """用 ffmpeg 取帧，PIL 拼成 ``rows`` x ``cols`` 网格图保存为 JPEG。
+
+    Args:
+        video_path: 视频文件路径。
+        frame_indices: 要提取的帧号列表。
+        fps: 视频帧率。
+        out_path: 输出 JPEG 路径。
+        tile_max_height: 单格最大高度(像素)。
+        cols: 网格列数。
+        rows: 网格行数。
+    """
+    cell_count = cols * rows
     if not frame_indices:
         blank = Image.new("RGB", (960, 720), (0, 0, 0))
         blank.save(out_path, "JPEG", quality=85)
@@ -160,21 +178,21 @@ def _build_grid(
             blank.save(out_path, "JPEG", quality=85)
             return
 
-        while len(frame_paths) < 9:
+        while len(frame_paths) < cell_count:
             dup = tmp_dir / f"f_{len(frame_paths) + 1:02d}.jpg"
             shutil.copy2(frame_paths[-1], dup)
             frame_paths.append(dup)
 
         images = []
-        for fp in frame_paths[:9]:
+        for fp in frame_paths[:cell_count]:
             with Image.open(fp) as img:
                 images.append(img.convert("RGB"))
 
         tile_w, tile_h = _grid_tile_size(images, tile_max_height)
-        canvas = Image.new("RGB", (tile_w * 3, tile_h * 3))
+        canvas = Image.new("RGB", (tile_w * cols, tile_h * rows))
         for idx, img in enumerate(images):
             resized = img.resize((tile_w, tile_h), Image.Resampling.BILINEAR)
-            row, col = divmod(idx, 3)
+            row, col = divmod(idx, cols)
             canvas.paste(resized, (col * tile_w, row * tile_h))
         canvas.save(out_path, "JPEG", quality=85)
 
