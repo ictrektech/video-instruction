@@ -21,7 +21,6 @@ def extract_scene_grids(
     scene_bounds: list[tuple[int, int, float, float]],
     metadata: dict,
     work_dir: Path,
-    ffmpeg_threads: int,
     tile_max_height: int,
     cache_dir: Path | None = None,
 ) -> list[tuple[SceneDTO, list[WarningDTO]]]:
@@ -50,7 +49,6 @@ def extract_scene_grids(
                 frame_indices,
                 fps,
                 grid_path,
-                ffmpeg_threads,
                 tile_max_height,
             )
 
@@ -145,7 +143,6 @@ def _build_grid(
     frame_indices: list[int],
     fps: float,
     out_path: Path,
-    ffmpeg_threads: int,
     tile_max_height: int,
 ) -> None:
     """用 ffmpeg 取帧，PIL 拼成 3x3 九宫格保存为 JPEG。"""
@@ -156,7 +153,7 @@ def _build_grid(
 
     with tempfile.TemporaryDirectory(prefix="grid_") as tmp:
         tmp_dir = Path(tmp)
-        frame_paths = _extract_frames(video_path, frame_indices, tmp_dir, "f", ffmpeg_threads)
+        frame_paths = _extract_frames(video_path, frame_indices, tmp_dir, "f", fps)
 
         if not frame_paths:
             blank = Image.new("RGB", (960, 720), (0, 0, 0))
@@ -195,31 +192,57 @@ def _extract_frames(
     frame_numbers: list[int],
     out_dir: Path,
     prefix: str,
-    ffmpeg_threads: int,
+    fps_val: float,
 ) -> list[Path]:
-    """用 ffmpeg 的 select 过滤器批量提取指定帧。"""
+    """用 ffmpeg 快速 seek + 时间范围截取提取指定帧。
+
+    利用 ``-ss`` 提前 seek + ``-to`` 限定时长，避免全解码。
+    通过 ``fps`` 过滤器在场景时间范围内均匀输出帧，每场景仅一次 ffmpeg 调用。
+
+    Args:
+        video_path: 视频文件路径。
+        frame_numbers: 要提取的帧号列表（决定时间范围）。
+        out_dir: 输出目录。
+        prefix: 输出文件前缀。
+        fps_val: 视频帧率，用于将帧号转为时间点。
+
+    Returns:
+        按 ``frame_numbers`` 顺序排列的输出路径列表。
+    """
     if not frame_numbers:
         return []
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    unique_frames = sorted(set(max(0, fn) for fn in frame_numbers))
-    select_expr = "+".join(f"eq(n\\,{fn})" for fn in unique_frames)
+
+    # 取最小/最大帧号作为时间范围（留 2% 边距避免端点帧丢失）
+    first_fn = max(0, min(frame_numbers))
+    last_fn = max(frame_numbers)
+    start_time = first_fn / fps_val
+    end_time = last_fn / fps_val
+    duration = max(0.1, end_time - start_time)
+
+    count = len(frame_numbers)
+    target_fps = count / duration
+
     output_pattern = out_dir / f"{prefix}_%03d.jpg"
-    result = subprocess.run(  # noqa: S603 — video_path is an upload system path, validated upstream
+
+    subprocess.run(  # noqa: S603
         [
             shutil.which("ffmpeg") or "ffmpeg",
             "-y",
             "-hide_banner",
             "-loglevel",
             "error",
-            "-threads",
-            str(ffmpeg_threads),
+            "-ss",
+            f"{start_time:.3f}",
             "-i",
             video_path,
+            "-to",
+            f"{end_time:.3f}",
             "-vf",
-            f"select='{select_expr}'",
-            "-vsync",
-            "0",
+            f"fps={target_fps:.6f}",
+            "-frames:v",
+            str(count),
             "-q:v",
             "5",
             "-an",
@@ -229,22 +252,10 @@ def _extract_frames(
         text=True,
         check=False,
     )
-    if result.returncode != 0:
-        return []
 
     extracted = sorted(out_dir.glob(f"{prefix}_*.jpg"))
-    if not extracted:
-        return []
-
-    by_frame = {fn: extracted[i] for i, fn in enumerate(unique_frames[: len(extracted)])}
-    ordered: list[Path] = []
-    for i, fn in enumerate(frame_numbers, start=1):
-        src = by_frame.get(max(0, fn))
-        if src is None:
-            continue
-        ordered_path = out_dir / f"{prefix}_{i:02d}.jpg"
-        if src != ordered_path:
-            shutil.copy2(src, ordered_path)
-        ordered.append(ordered_path)
-
-    return [p for p in ordered if p.exists() and p.stat().st_size > 0]
+    # fps 过滤器输出已按时间均匀分布，直接补齐到 count 个
+    while len(extracted) < count:
+        extracted.append(extracted[-1] if extracted else Path())
+    # 防止超出 count（ffmpeg 可能多输出 1 帧）
+    return extracted[:count]

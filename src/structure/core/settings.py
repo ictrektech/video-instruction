@@ -16,7 +16,6 @@ class Settings(BaseSettings):
 
     data_base_path: str = Field("/data/video-structured", description="视频文件基础路径前缀")
     video_work_dir: str = Field("/tmp/video-structured", description="视频处理临时工作目录")  # noqa: S108
-    video_ffmpeg_threads: int = Field(1, description="ffmpeg 内部线程数")
     video_grid_tile_max_height: int = Field(360, description="九宫格单 tile 最大高度(像素)")
     video_scenes_dir: str = Field(
         "scenes",

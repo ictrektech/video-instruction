@@ -96,7 +96,6 @@ async def structure(
             scene_bounds,
             metadata,
             call_work_dir,
-            settings.video_ffmpeg_threads,
             settings.video_grid_tile_max_height,
             cache_dir,
         )
