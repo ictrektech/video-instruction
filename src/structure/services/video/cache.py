@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 from logging import getLogger
@@ -12,19 +13,44 @@ from structure.schemas.video import SceneDTO, StructureResultDTO, VideoMetadataS
 
 logger = getLogger(__name__)
 
-HASH_BLOCK_SIZE = 64 * 1024  # 64 KiB
-
 
 def compute_video_hash(video_path: str) -> str:
-    """流式计算视频文件的 SHA-256 值。"""
-    sha = hashlib.sha256()
+    """
+    极速采样哈希：3点×16KB
+    适合边缘 NAS、树莓派等低性能设备
+    Args:
+        video_path: 视频文件路径
+    Returns:
+        32位十六进制 MD5 哈希值
+    """
+    file_size = os.path.getsize(video_path)
+
+    # 小文件直接计算完整哈希
+    if file_size < 1024 * 1024:  # < 1MB
+        return hashlib.md5(open(video_path, "rb").read()).hexdigest()  # noqa: S324
+
+    # 初始化 MD5
+    md5 = hashlib.md5()  # noqa: S324
+
+    # 加入文件大小作为种子（增加区分度）
+    md5.update(str(file_size).encode())
+
+    # 采样位置：开头、中间、结尾
+    positions = [
+        0,  # 开头
+        file_size // 2,  # 中间
+        max(0, file_size - 16 * 1024),  # 结尾（避免越界）
+    ]
+
     with open(video_path, "rb") as f:
-        while True:
-            block = f.read(HASH_BLOCK_SIZE)
-            if not block:
-                break
-            sha.update(block)
-    return sha.hexdigest()
+        for pos in positions:
+            # 定位到采样点
+            f.seek(pos)
+            # 读取 16KB
+            data = f.read(16 * 1024)
+            md5.update(data)
+
+    return md5.hexdigest()
 
 
 def _scenes_cache_root(settings: Settings) -> Path:
