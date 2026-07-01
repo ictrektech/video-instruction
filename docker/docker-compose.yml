@@ -17,10 +17,9 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8910
-      DATA_BASE_PATH: /data/video-structured
     volumes:
       - ../log:/app/log
-      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -41,10 +40,9 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8911
-      DATA_BASE_PATH: /data/video-structured
     volumes:
       - ../log:/app/log
-      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
     networks:
       - video-instruction-net
     restart: unless-stopped

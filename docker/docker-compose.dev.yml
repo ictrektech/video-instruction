@@ -21,14 +21,14 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
       # Video data volume
-      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
     env_file:
       - ../src/.env
     environment:
       APP_ENV: dev
-      DATA_BASE_PATH: /data/video-structured
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
     networks:
       - video-instruction-dev-net
     restart: unless-stopped
@@ -58,14 +58,14 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-structure:/app/.venv
       # Video data volume
-      - ${DATA_BASE_PATH:-/data/video-structured}:/data/video-structured
+      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
     env_file:
       - ../src/.env
     environment:
       APP_ENV: dev
-      DATA_BASE_PATH: /data/video-structured
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
     networks:
       - video-instruction-dev-net
     restart: unless-stopped
