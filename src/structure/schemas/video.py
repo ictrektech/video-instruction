@@ -66,7 +66,7 @@ class WarningDTO(BaseModel):
 class StructureResultDTO(BaseModel):
     """结构化结果 DTO"""
 
-    video_id: str = Field(description="视频 ID")
+    video_hash: str = Field(description="视频内容哈希（MD5）")
     metadata: VideoMetadataSchema = Field(description="视频元数据")
     grid_base_path: str = Field(
         default="",

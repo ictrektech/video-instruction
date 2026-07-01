@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import tempfile
 import time
-import uuid
 from logging import getLogger
 from pathlib import Path
 
@@ -57,9 +57,7 @@ async def structure(
         )
 
     work_dir = work_dir or settings.video_work_dir
-    video_id = uuid.uuid4().hex[:12]
-    call_work_dir = Path(work_dir) / video_id
-    call_work_dir.mkdir(parents=True, exist_ok=True)
+    call_work_dir = Path(tempfile.mkdtemp(dir=work_dir))
 
     started_at = time.time()
     stage_timings: dict[str, float] = {}
@@ -113,7 +111,7 @@ async def structure(
     stage_timings["total"] = elapsed_sec
 
     result = StructureResultDTO(
-        video_id=video_id,
+        video_hash=video_hash,
         metadata=VideoMetadataSchema(
             video_path=cmd.video_path,
             fps=metadata["fps"],

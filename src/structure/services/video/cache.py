@@ -80,7 +80,7 @@ class _CachedData:
     def __init__(
         self,
         cache_version: int,
-        video_id: str,
+        video_hash: str,
         grid_base_path: str,
         metadata: VideoMetadataSchema,
         scenes: list[dict],
@@ -89,7 +89,7 @@ class _CachedData:
         elapsed_sec: float,
     ):
         self.cache_version = cache_version
-        self.video_id = video_id
+        self.video_hash = video_hash
         self.grid_base_path = grid_base_path
         self.metadata = metadata
         self.scenes = scenes
@@ -100,7 +100,7 @@ class _CachedData:
     def to_dict(self) -> dict:
         return {
             "cache_version": self.cache_version,
-            "video_id": self.video_id,
+            "video_hash": self.video_hash,
             "grid_base_path": self.grid_base_path,
             "metadata": self.metadata.model_dump(),
             "scenes": self.scenes,
@@ -113,7 +113,7 @@ class _CachedData:
     def from_dict(cls, data: dict) -> _CachedData:
         return cls(
             cache_version=data["cache_version"],
-            video_id=data["video_id"],
+            video_hash=data["video_hash"],
             grid_base_path=data.get("grid_base_path", ""),
             metadata=VideoMetadataSchema(**data["metadata"]),
             scenes=data["scenes"],
@@ -123,7 +123,7 @@ class _CachedData:
         )
 
 
-_CURRENT_CACHE_VERSION = 1
+_CURRENT_CACHE_VERSION = 2
 
 
 def _scene_to_cached_dict(scene: SceneDTO) -> dict:
@@ -197,7 +197,7 @@ def load_cached_result(
     warnings = [WarningDTO(**w) for w in cached.warnings]
 
     return StructureResultDTO(
-        video_id=cached.video_id,
+        video_hash=cached.video_hash,
         metadata=cached.metadata,
         grid_base_path=cached.grid_base_path,
         scenes=scenes,
@@ -217,7 +217,7 @@ def save_cached_result(
 
     cached_data = _CachedData(
         cache_version=_CURRENT_CACHE_VERSION,
-        video_id=result.video_id,
+        video_hash=result.video_hash,
         grid_base_path=result.grid_base_path,
         metadata=result.metadata,
         scenes=[_scene_to_cached_dict(s) for s in result.scenes],
