@@ -38,6 +38,7 @@ help:  ## 显示帮助
 .PHONY: dev dev-down dev-logs dev-build dev-ps
 
 dev:       ## [Dev] 启动服务（加 OPTS=-d 后台运行）
+	set -a; . src/.env; set +a && \
 	$(DEV_CMD) --profile detection --profile structure up $(OPTS)
 dev-down:  ## [Dev] 停止服务
 	$(DEV_CMD) down
