@@ -38,7 +38,7 @@ def query_video_metadata(
     cmd = [
         ffprobe_path,
         "-v",
-        "quiet",
+        "error",
         "-print_format",
         "json",
         "-show_format",
@@ -49,7 +49,7 @@ def query_video_metadata(
         cmd, capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffprobe 失败: {result.stderr.strip()}")
+        raise RuntimeError(f"ffprobe 失败 (exit={result.returncode}): {result.stderr.strip()}")
 
     probe = json.loads(result.stdout or "{}")
     video_stream = next(

@@ -57,6 +57,7 @@ async def structure(
         )
 
     work_dir = work_dir or settings.video_work_dir
+    Path(work_dir).mkdir(parents=True, exist_ok=True)
     call_work_dir = Path(tempfile.mkdtemp(dir=work_dir))
 
     started_at = time.time()
