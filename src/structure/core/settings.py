@@ -22,6 +22,13 @@ class Settings(BaseSettings):
         description="场景缓存持久化子目录名，相对于 data_base_path",
     )
 
+    # ── 大模型描述 ────────────────────────────────────────────
+    llm_base_url: str = Field("http://localhost:13454/v1", description="LLM API 地址")
+    llm_api_key: str = Field("", description="LLM API Key")
+    llm_model_name: str = Field("qwen2-vl-7b", description="LLM 模型名称")
+    llm_max_concurrency: int = Field(5, description="并发描述的场景数")
+    llm_request_timeout: int = Field(120, description="单次 LLM 请求超时秒数")
+
     model_config = SettingsConfigDict(
         env_file=("src/structure/.env", ".env"),
         env_file_encoding="utf-8",

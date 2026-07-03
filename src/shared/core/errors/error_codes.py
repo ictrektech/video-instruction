@@ -25,3 +25,5 @@ class BusinessErrorCode(ErrorCodeMixin):
     COMMON_BULK_DELETE_IDS_IS_INVALID = (10003, "批量参数ID列表为空")
     VIDEO_FILE_NOT_FOUND = (70101, "视频文件未找到: {}")
     VIDEO_CACHE_NOT_FOUND = (70102, "视频缓存未找到")
+    VIDEO_DESCRIPTION_LLM_ERROR = (70103, "大模型调用失败: {}")
+    VIDEO_SCENE_CACHE_MISS = (70104, "视频场景缓存未找到，请先结构化")

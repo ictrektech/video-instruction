@@ -30,6 +30,7 @@ scene-detect = [
 structure = [
   "Pillow>=11.0.0",
   "numpy>=1.26.0",
+  "openai>=1.0.0",
 ]
 dev = [
   "pytest>=8.0.0",
