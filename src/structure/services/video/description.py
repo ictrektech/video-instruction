@@ -17,6 +17,7 @@ from structure.schemas.description import (
     SceneDescriptionItem,
     SceneDescriptionResult,
 )
+from structure.schemas.model_config import ModelConfig
 from structure.schemas.video import WarningDTO
 from structure.services.llm.client import LLMClient, LLMRequestError
 from structure.services.video.cache import get_cache_path, load_cached_result
@@ -59,6 +60,7 @@ def _save_descriptions(cache_dir: Path, result: SceneDescriptionResult) -> None:
 async def describe_scenes(
     video_hash: str,
     settings: Settings,
+    model_cfg: ModelConfig | None,
     force: bool = False,
 ) -> SceneDescriptionResult:
     """对指定视频的所有场景进行大模型描述
@@ -72,6 +74,7 @@ async def describe_scenes(
     Args:
         video_hash: 视频内容哈希
         settings: 服务配置
+        llm_config: 大模型配置
         force: 是否强制重新描述（忽略缓存）
 
     Returns:
@@ -96,14 +99,18 @@ async def describe_scenes(
     # 3. 构造图片路径 & 并发描述
     scenes = cached_result.scenes
     grids_dir = cache_dir / "grids"
+
+    if model_cfg is None:
+        raise ApiException(BusinessErrorCode.COMMON_INVALID_ARGUMENT, "缺少大模型配置")
+
     llm_client = LLMClient(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model_name=settings.llm_model_name,
-        timeout=settings.llm_request_timeout,
+        base_url=model_cfg.base_url,
+        api_key=model_cfg.api_key,
+        model_name=model_cfg.model_name,
+        timeout=model_cfg.request_timeout or settings.llm_request_timeout,
     )
 
-    sem = Semaphore(settings.llm_max_concurrency)
+    sem = Semaphore(model_cfg.max_concurrency)
 
     async def _describe_one(
         scene_index: int, grid_image: str

@@ -23,6 +23,7 @@ class BusinessErrorCode(ErrorCodeMixin):
     COMMON_OBJECT_NOT_FOUND = (10001, "找不到ID为 {} 的 {}")
     COMMON_UNSUPPORTED_OPERATION = (10002, "不支持的操作: {}")
     COMMON_BULK_DELETE_IDS_IS_INVALID = (10003, "批量参数ID列表为空")
+    COMMON_INVALID_ARGUMENT = (10004, "参数校验失败: {}")
     VIDEO_FILE_NOT_FOUND = (70101, "视频文件未找到: {}")
     VIDEO_CACHE_NOT_FOUND = (70102, "视频缓存未找到")
     VIDEO_DESCRIPTION_LLM_ERROR = (70103, "大模型调用失败: {}")

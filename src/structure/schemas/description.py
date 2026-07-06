@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from structure.schemas.model_config import ModelConfig
 from structure.schemas.video import WarningDTO
 
 
@@ -12,6 +13,10 @@ class DescribeSceneCommand(BaseModel):
 
     video_hash: str = Field(description="视频内容哈希（MD5）")
     force: bool = Field(default=False, description="强制重新描述，忽略缓存")
+    model_cfg: ModelConfig | None = Field(
+        default=None,
+        description="大模型配置，不传则使用服务端 settings 默认值",
+    )
 
 
 class SceneDescriptionItem(BaseModel):

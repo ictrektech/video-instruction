@@ -28,6 +28,7 @@ async def describe_scenes(
         video_hash=command.video_hash,
         settings=settings,
         force=command.force,
+        model_cfg=command.model_cfg,
     )
     logger.info("视频 %s 场景描述完成", result.video_hash)
     return ResponseDTO.ok(result)
