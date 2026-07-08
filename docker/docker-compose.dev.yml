@@ -21,9 +21,7 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
       # Video data volume
-      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
-    env_file:
-      - ../src/.env
+      - ${UPLOAD_LOCATION}/photos:/data/video-structured
     environment:
       APP_ENV: dev
       PYTHONDONTWRITEBYTECODE: "1"
@@ -58,11 +56,14 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-structure:/app/.venv
       # Video data volume
-      - ${DATA_BASE_PATH:-/data/video-structured}:${DATA_BASE_PATH:-/data/video-structured}
-    env_file:
-      - ../src/.env
+      - ${UPLOAD_LOCATION}/photos:/data/video-structured
     environment:
       APP_ENV: dev
+      APP_PORT: 8911
+      LLM_BASE_URL: http://10.144.144.232:21436/v1
+      LLM_API_KEY: sk-fake
+      LLM_MODEL_NAME: minicpm-v:latest
+      LLM_MAX_CONCURRENCY: 20
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
