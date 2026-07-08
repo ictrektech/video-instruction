@@ -21,9 +21,10 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
       # Video data volume
-      - ${UPLOAD_LOCATION}/photos:/data/video-structured
+      - immich-photos:/data
     environment:
       APP_ENV: dev
+      DATA_BASE_PATH: /data
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
@@ -56,10 +57,11 @@ services:
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-structure:/app/.venv
       # Video data volume
-      - ${UPLOAD_LOCATION}/photos:/data/video-structured
+      - immich-photos:/data
     environment:
       APP_ENV: dev
       APP_PORT: 8911
+      DATA_BASE_PATH: /data
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
       LLM_MODEL_NAME: minicpm-v:latest
@@ -79,6 +81,13 @@ services:
         exec uv run structure
 
 volumes:
+  immich-photos:
+    name: dev-immich-photos
+    driver: local
+    driver_opts:
+      type: none
+      device: ${UPLOAD_LOCATION}/photos
+      o: bind
   video-instruction-venv-detection:
   video-instruction-venv-structure:
 

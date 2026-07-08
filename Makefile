@@ -18,10 +18,12 @@ IMAGE_NAME ?= video-instruction
 OPTS  ?=  # 传给 docker/compose 的额外参数（如 -d、--no-cache）
 
 DEV_COMPOSE  := docker/docker-compose.dev.yml
-DEV_CMD      := docker compose -f $(DEV_COMPOSE)
+DEV_ENV_FILE := docker/.env.dev
+DEV_CMD      := docker compose --env-file $(DEV_ENV_FILE) -f $(DEV_COMPOSE)
 
 PROD_COMPOSE := docker/docker-compose.yml
-PROD_CMD     := docker compose -f $(PROD_COMPOSE)
+PROD_ENV_FILE := docker/.env.prod
+PROD_CMD     := docker compose --env-file $(PROD_ENV_FILE) -f $(PROD_COMPOSE)
 
 GIT_HASH   := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date +%Y%m%d)
@@ -38,7 +40,6 @@ help:  ## 显示帮助
 .PHONY: dev dev-down dev-logs dev-build dev-ps
 
 dev:       ## [Dev] 启动服务（加 OPTS=-d 后台运行）
-	set -a; . src/.env; set +a && \
 	$(DEV_CMD) --profile detection --profile structure up $(OPTS)
 dev-down:  ## [Dev] 停止服务
 	$(DEV_CMD) down

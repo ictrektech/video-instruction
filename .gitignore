@@ -10,6 +10,9 @@ wheels/
 .venv
 .codex/
 .env
+.env.prod
+.env.dev
+.env.test
 *.log
 .vscode/
 .langgraph_api/

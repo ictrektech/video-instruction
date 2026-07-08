@@ -15,9 +15,10 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8910
+      DATA_BASE_PATH: /data
     volumes:
       - ../log:/app/log
-      - ${UPLOAD_LOCATION}/photos:/data/video-structured
+      - immich-photos:/data
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -36,16 +37,26 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8911
+      DATA_BASE_PATH: /data
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
       LLM_MODEL_NAME: minicpm-v:latest
       LLM_MAX_CONCURRENCY: 20
     volumes:
       - ../log:/app/log
-      - ${UPLOAD_LOCATION}/photos:/data/video-structured
+      - immich-photos:/data
     networks:
       - video-instruction-net
     restart: unless-stopped
+
+volumes:
+  immich-photos:
+    name: immich-prod_immich-photos
+    driver: local
+    driver_opts:
+      type: none
+      device: ${UPLOAD_LOCATION}/photos
+      o: bind
 
 networks:
   video-instruction-net:
