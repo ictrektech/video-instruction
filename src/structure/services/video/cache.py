@@ -55,11 +55,11 @@ def compute_video_hash(video_path: str) -> str:
 
 def _scenes_cache_root(settings: Settings) -> Path:
     """返回 scenes 缓存的根目录。"""
-    return Path(settings.data_base_path) / settings.video_scenes_dir
+    return Path(settings.cache_base_path) / settings.video_scenes_dir
 
 
 def get_cache_path(video_hash: str, settings: Settings) -> Path:
-    """返回 `<data_base_path>/scenes/<hash>/` 目录。"""
+    """返回 `<cache_base_path>/scenes/<hash>/` 目录。"""
     return _scenes_cache_root(settings) / video_hash
 
 
@@ -155,7 +155,7 @@ def _scene_from_cached_dict(data: dict) -> SceneDTO:
 
 def load_cached_result(
     cache_dir: Path,
-    data_base_path: str | Path | None = None,
+    cache_base_path: str | Path | None = None,
 ) -> StructureResultDTO | None:
     """从缓存目录加载完整结果。"""
     json_path = _cached_json_path(cache_dir)
@@ -184,8 +184,8 @@ def load_cached_result(
     scenes: list[SceneDTO] = []
     for scene_data in cached.scenes:
         grid_image = scene_data.get("grid_image")
-        if grid_image and data_base_path:
-            grid_abs = Path(data_base_path) / cached.grid_base_path / grid_image
+        if grid_image and cache_base_path:
+            grid_abs = Path(cache_base_path) / cached.grid_base_path / grid_image
             if not grid_abs.is_file():
                 logger.warning(
                     "场景 %d 的 grid 图片缺失，缓存失效", scene_data.get("scene_index", 0)

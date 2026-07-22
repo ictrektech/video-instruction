@@ -68,7 +68,7 @@ async def structure(
     video_hash = await asyncio.to_thread(compute_video_hash, video_path)
     cache_dir = get_cache_path(video_hash, settings)
     if not cmd.force and cache_dir.is_dir():
-        cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.data_base_path)
+        cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.cache_base_path)
         if cached is not None:
             cached.elapsed_sec = round(time.time() - started_at, 2)
             cached.stage_timings["total"] = cached.elapsed_sec

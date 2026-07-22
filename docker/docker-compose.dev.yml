@@ -12,7 +12,8 @@ services:
     ports:
       - "${SCENE_DETECTION_PORT:-8910}:8910"
     volumes:
-      # Source code — mounted live so uvicorn --reload picks up changes
+      - /data:/data:ro
+      - ${UPLOAD_LOCATION}/photos:/photos
       - ../src:/app/src
       - ../config:/app/config
       - ../log:/app/log
@@ -20,11 +21,9 @@ services:
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
-      # Video data volume
-      - immich-photos:/data
     environment:
       APP_ENV: dev
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
@@ -50,18 +49,21 @@ services:
     ports:
       - "${STRUCTURE_PORT:-8911}:8911"
     volumes:
+      - /data:/data:ro                                                   # 读：宿主机 /data/ 下任意路径（无需翻译）
+      - ${UPLOAD_LOCATION}/photos:/photos                                # 读：immich 照片（兼容相对路径模式）
       - ../src:/app/src
       - ../config:/app/config
       - ../log:/app/log
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-structure:/app/.venv
-      # Video data volume
-      - immich-photos:/data
+      # 写：集中式缓存（与输入路径解耦）
+      - /data/video-structure-cache:/data/video-structure-cache
     environment:
       APP_ENV: dev
       APP_PORT: 8911
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
       LLM_MODEL_NAME: minicpm-v:latest
@@ -81,13 +83,6 @@ services:
         exec uv run structure
 
 volumes:
-  immich-photos:
-    name: dev-immich-photos
-    driver: local
-    driver_opts:
-      type: none
-      device: ${UPLOAD_LOCATION}/photos
-      o: bind
   video-instruction-venv-detection:
   video-instruction-venv-structure:
 

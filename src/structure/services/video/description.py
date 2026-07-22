@@ -86,7 +86,7 @@ async def describe_scenes(
     cache_dir = get_cache_path(video_hash, settings)
 
     # 1. 查找场景缓存
-    cached_result = load_cached_result(cache_dir, settings.data_base_path)
+    cached_result = load_cached_result(cache_dir, settings.cache_base_path)
     if cached_result is None:
         raise ApiException(BusinessErrorCode.VIDEO_SCENE_CACHE_MISS)
 
