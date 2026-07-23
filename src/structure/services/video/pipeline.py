@@ -9,6 +9,7 @@ from pathlib import Path
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
+from shared.utils.video_hash import compute_video_hash
 from structure.core.settings import settings
 from structure.schemas.video import (
     SceneDTO,
@@ -18,7 +19,6 @@ from structure.schemas.video import (
     WarningDTO,
 )
 from structure.services.video.cache import (
-    compute_video_hash,
     get_cache_path,
     load_cached_result,
     save_cached_result,

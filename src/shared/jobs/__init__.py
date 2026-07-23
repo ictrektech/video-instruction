@@ -1,13 +1,14 @@
 """shared/jobs — Huey 任务队列封装。
 
 对外暴露：
-- init_db()              — 初始化 jobs 表（应用启动时调用）
-- create_job()           — 创建 jobs 行，返回 job_id
-- get_job()              — 查询 job
-- update_job()           — 更新 job 状态/结果/错误
-- enqueue_job()          — 原子化：创建 jobs 行 + enqueue Huey task
-- cleanup_expired()      — TTL 清理
-- huey                   — 全局 SqliteHuey 实例（用于注册任务函数、enqueue、启动 Consumer）
+- init_db()                       — 初始化 jobs 表（应用启动时调用）
+- create_job() / enqueue_job()    — 创建 jobs 行；原子化入队
+- get_job() / update_job()        — 查询 / 更新 job
+- get_pending_job_by_video_hash() — 按 video_hash 查未完成任务（去重）
+- build_job_submit_response()     — 统一提交响应
+- build_job_status_response()     — 统一状态查询响应
+- cleanup_expired()               — TTL 清理
+- huey                            — 全局 SqliteHuey 实例
 
 用法：
     from shared.jobs import huey, init_db, enqueue_job, get_job
@@ -37,14 +38,14 @@ from shared.jobs.models import (
     _now,
     create_job,
     get_job,
-    get_pending_job_by_request_field,
+    get_pending_job_by_video_hash,
     init_db,
     update_job,
 )
 from shared.jobs.models import (
     cleanup_expired_jobs as cleanup_expired,
 )
-from shared.jobs.schemas import JobErrorDTO, JobStatusResponse
+from shared.jobs.schemas import JobErrorDTO, JobStatusResponse, JobSubmitResponse
 
 logger = getLogger(__name__)
 
@@ -52,13 +53,13 @@ __all__ = [
     "huey",
     "init_db",
     "build_job_status_response",
+    "build_job_submit_response",
     "create_job",
     "get_job",
-    "get_pending_job_by_request_field",
+    "get_pending_job_by_video_hash",
     "update_job",
     "enqueue_job",
     "run_worker",
-    "try_duplicate_job",
     "cleanup_expired",
 ]
 
@@ -71,6 +72,7 @@ def enqueue_job(
     task_kwargs: dict | None = None,
     *,
     job_id: str | None = None,
+    video_hash: str | None = None,
     priority: int | None = None,
 ) -> str:
     """原子化：创建 jobs 行 + enqueue Huey task（在同一个事务中）。
@@ -88,6 +90,7 @@ def enqueue_job(
             因此 task 函数无需在 task_args 中重复传入 job_id。
         task_kwargs: 传递给 task 函数的关键字参数。
         job_id: 可选。指定 Huey Task ID + jobs.job_id（UUID），不指定则自动生成。
+        video_hash: 可选。视频内容哈希，写入 jobs.video_hash 供去重/按视频查询。
         priority: 可选。Huey task 优先级，不指定则使用 task_class 默认。
 
     Returns:
@@ -112,25 +115,24 @@ def enqueue_job(
 
     with _db()(commit=True) as curs:
         # 1. 写 jobs 表
-        curs.execute(SQL_INSERT_JOB, (jid, job_type, now_ts, request_str))
+        curs.execute(SQL_INSERT_JOB, (jid, job_type, video_hash, now_ts, request_str))
         # 2. 写 Huey task 表（即 huey.storage.enqueue 的核心逻辑）
         curs.execute(
             "INSERT INTO task (queue, data, priority) VALUES (?, ?, ?)",
             (huey.name, memoryview(data), priority if priority is not None else 0),
         )
 
-    logger.info("enqueue_job: id=%s type=%s", jid, job_type)
+    logger.info("enqueue_job: id=%s type=%s hash=%s", jid, job_type, video_hash)
     return jid
 
 
-def try_duplicate_job(job_type: str, json_path: str, value: str) -> str | None:
-    """查询相同参数的未完成任务，有则返回已有 job_id，无则返回 None。"""
-    existing = get_pending_job_by_request_field(job_type, json_path, value)
-    if not existing:
-        return None
-
-    logger.info("%s job 已存在，复用: id=%s", job_type, existing)
-    return existing
+def build_job_submit_response(job_id: str, poll_url_prefix: str) -> JobSubmitResponse:
+    """构建统一的任务提交响应。"""
+    return JobSubmitResponse(
+        job_id=job_id,
+        status="queued",
+        poll_url=f"{poll_url_prefix}/{job_id}",
+    )
 
 
 def run_worker(service: str) -> None:

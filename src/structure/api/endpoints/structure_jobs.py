@@ -9,12 +9,14 @@ from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.jobs import (
     build_job_status_response,
+    build_job_submit_response,
     enqueue_job,
     get_job,
-    try_duplicate_job,
+    get_pending_job_by_video_hash,
 )
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
+from shared.utils.video_hash import compute_video_hash
 from structure.core.settings import settings
 from structure.schemas.jobs import StructureJobRequest
 from structure.utils import resolve_video_path
@@ -22,6 +24,8 @@ from structure.utils import resolve_video_path
 logger = getLogger(__name__)
 
 router = APIRouter()
+
+_POLL_PREFIX = "/api/v2/video/structure/jobs"
 
 
 @router.post(
@@ -39,7 +43,6 @@ async def submit_structure_job(
       - scenes：直接传入场景边界列表
       - detect_job_id：引用 scene-detect job 的结果
     """
-    # 参数校验
     abs_path = resolve_video_path(req.video_path, settings.data_base_path)
     if not Path(abs_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, abs_path)
@@ -58,22 +61,15 @@ async def submit_structure_job(
                 f"detect_job_id={req.detect_job_id}",
             )
 
-    # 去重：相同 video_path 有未完成任务时复用
-    dup = try_duplicate_job("structure", "$.video_path", abs_path)
-    if dup:
-        return ResponseDTO.ok(
-            JobSubmitResponse(
-                job_id=dup,
-                status="queued",
-                poll_url=f"/api/v2/video/structure/jobs/{dup}",
-            )
-        )
+    video_hash = compute_video_hash(abs_path)
 
-    # 构建 request data
+    existing = get_pending_job_by_video_hash("structure", video_hash)
+    if existing:
+        logger.info("structure job 已存在，复用: id=%s hash=%s", existing, video_hash)
+        return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
+
     scenes_data = [s.model_dump() for s in req.scenes] if req.scenes else None
-
-    request_data = {
-        "video_path": abs_path,
+    task_kwargs = {
         "scenes": scenes_data,
         "detect_job_id": req.detect_job_id,
         "frame_grid": req.frame_grid,
@@ -81,27 +77,21 @@ async def submit_structure_job(
         "grid_rows": req.grid_rows,
         "grid_cols": req.grid_cols,
     }
+    request_data = {"video_path": abs_path, "video_hash": video_hash, **task_kwargs}
 
-    # 原子化：创建 jobs 行 + enqueue Huey task
     from structure.services.tasks import run_structure
 
-    task_kwargs = {k: v for k, v in request_data.items() if k != "video_path"}
     job_id = enqueue_job(
         "structure",
         request_data,
         run_structure.task_class,
         task_args=(abs_path,),
         task_kwargs=task_kwargs,
+        video_hash=video_hash,
     )
 
-    logger.info("提交 structure job: id=%s video=%s", job_id, abs_path)
-    return ResponseDTO.ok(
-        JobSubmitResponse(
-            job_id=job_id,
-            status="queued",
-            poll_url=f"/api/v2/video/structure/jobs/{job_id}",
-        )
-    )
+    logger.info("提交 structure job: id=%s hash=%s video=%s", job_id, video_hash, abs_path)
+    return ResponseDTO.ok(build_job_submit_response(job_id, _POLL_PREFIX))
 
 
 @router.get(

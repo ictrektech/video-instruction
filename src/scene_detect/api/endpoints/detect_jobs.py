@@ -12,16 +12,20 @@ from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.jobs import (
     build_job_status_response,
+    build_job_submit_response,
     enqueue_job,
     get_job,
-    try_duplicate_job,
+    get_pending_job_by_video_hash,
 )
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
+from shared.utils.video_hash import compute_video_hash
 
 logger = getLogger(__name__)
 
 router = APIRouter()
+
+_POLL_PREFIX = "/api/v2/scenes/detect/jobs"
 
 
 @router.post(
@@ -34,7 +38,6 @@ async def submit_detect_job(
     req: DetectJobRequest,
 ) -> ResponseDTO[JobSubmitResponse]:
     """提交 scene-detect 异步任务。"""
-    # 验证 video_path
     video_path = resolve_detect_video_path(req.video_path, detect_settings.data_base_path)
     if not Path(video_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
@@ -43,43 +46,28 @@ async def submit_detect_job(
         req.threshold if req.threshold is not None else detect_settings.video_scene_threshold
     )
     max_scenes = req.max_scenes if req.max_scenes is not None else detect_settings.video_max_scenes
+    video_hash = compute_video_hash(video_path)
 
-    # 去重：相同 video_path 有未完成任务时复用
-    dup = try_duplicate_job("scene_detect", "$.video_path", video_path)
-    if dup:
-        return ResponseDTO.ok(
-            JobSubmitResponse(
-                job_id=dup,
-                status="queued",
-                poll_url=f"/api/v2/scenes/detect/jobs/{dup}",
-            )
-        )
+    existing = get_pending_job_by_video_hash("scene_detect", video_hash)
+    if existing:
+        logger.info("scene_detect job 已存在，复用: id=%s hash=%s", existing, video_hash)
+        return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
 
-    # 原子化：创建 jobs 行 + enqueue Huey task
-    request_data = {
-        "video_path": video_path,
-        "threshold": threshold,
-        "max_scenes": max_scenes,
-    }
     from scene_detect.services.tasks import run_detect_scenes
 
-    task_kwargs = {k: v for k, v in request_data.items() if k != "video_path"}
+    task_kwargs = {"threshold": threshold, "max_scenes": max_scenes}
+    request_data = {"video_path": video_path, "video_hash": video_hash, **task_kwargs}
     job_id = enqueue_job(
         "scene_detect",
         request_data,
         run_detect_scenes.task_class,
         task_args=(video_path,),
         task_kwargs=task_kwargs,
+        video_hash=video_hash,
     )
 
-    logger.info("提交 scene-detect job: id=%s video=%s", job_id, video_path)
-    return ResponseDTO.ok(
-        JobSubmitResponse(
-            job_id=job_id,
-            status="queued",
-            poll_url=f"/api/v2/scenes/detect/jobs/{job_id}",
-        )
-    )
+    logger.info("提交 scene-detect job: id=%s hash=%s video=%s", job_id, video_hash, video_path)
+    return ResponseDTO.ok(build_job_submit_response(job_id, _POLL_PREFIX))
 
 
 @router.get(

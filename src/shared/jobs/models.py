@@ -16,10 +16,12 @@ logger = getLogger(__name__)
 
 # ── SQL ──────────────────────────────────────────────────────────────────
 
+# 注意：ALTER TABLE ADD COLUMN 会把列加在末尾；查询一律用显式列名，不依赖物理顺序。
 SQL_CREATE_JOBS_TABLE = """
 CREATE TABLE IF NOT EXISTS jobs (
     job_id       TEXT PRIMARY KEY,
     job_type     TEXT NOT NULL,
+    video_hash   TEXT,
     status       TEXT NOT NULL DEFAULT 'queued',
     created_at   INTEGER NOT NULL,
     started_at   INTEGER,
@@ -34,18 +36,27 @@ CREATE TABLE IF NOT EXISTS jobs (
 )
 """
 
-SQL_INSERT_JOB = """
-INSERT INTO jobs (job_id, job_type, status, created_at, attempt, request_json)
-VALUES (?, ?, 'queued', ?, 0, ?)
+SQL_CREATE_PENDING_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_jobs_pending_video
+ON jobs(job_type, video_hash)
+WHERE status IN ('queued', 'running')
 """
 
-SQL_GET_JOB = "SELECT * FROM jobs WHERE job_id = ?"
+SQL_INSERT_JOB = """
+INSERT INTO jobs (job_id, job_type, video_hash, status, created_at, attempt, request_json)
+VALUES (?, ?, ?, 'queued', ?, 0, ?)
+"""
 
-# 查询指定 job_type + request_json 中某字段匹配的未完成任务
-SQL_GET_PENDING_JOB_BY_REQUEST_FIELD = """
+SQL_GET_JOB = """
+SELECT job_id, job_type, video_hash, status, created_at, started_at, finished_at,
+       attempt, request_json, result_json, result_ref, error_code, error_message, error_detail
+FROM jobs WHERE job_id = ?
+"""
+
+SQL_GET_PENDING_JOB_BY_VIDEO_HASH = """
 SELECT job_id FROM jobs
 WHERE job_type = ?
-  AND json_extract(request_json, ?) = ?
+  AND video_hash = ?
   AND status IN ('queued', 'running')
 ORDER BY created_at DESC
 LIMIT 1
@@ -91,10 +102,23 @@ def _db():
     return huey.storage.db
 
 
+def _has_column(curs, table: str, column: str) -> bool:
+    rows = curs.execute(f"PRAGMA table_info({table})").fetchall()  # noqa: S608
+    return any(r[1] == column for r in rows)
+
+
 def init_db() -> None:
-    """初始化 jobs 表（幂等）。应用启动时调用。"""
+    """初始化 jobs 表（幂等）。应用启动时调用。
+
+    兼容已有库：CREATE TABLE IF NOT EXISTS 不会给旧表加列，
+    因此额外用 ALTER TABLE 迁移 video_hash。
+    """
     with _db()(commit=True) as curs:
         curs.execute(SQL_CREATE_JOBS_TABLE)
+        if not _has_column(curs, "jobs", "video_hash"):
+            curs.execute("ALTER TABLE jobs ADD COLUMN video_hash TEXT")
+            logger.info("jobs 表已迁移：新增 video_hash 列")
+        curs.execute(SQL_CREATE_PENDING_INDEX)
     logger.info("jobs 表已就绪 (db=%s)", settings.huey_db_path)
 
 
@@ -103,15 +127,22 @@ def create_job(
     request_json: dict,
     *,
     job_id: str | None = None,
+    video_hash: str | None = None,
 ) -> str:
     """创建 jobs 行并返回 job_id（UUID）。"""
     jid = job_id or str(uuid.uuid4())
     with _db()(commit=True) as curs:
         curs.execute(
             SQL_INSERT_JOB,
-            (jid, job_type, _now(), json.dumps(request_json, ensure_ascii=False)),
+            (
+                jid,
+                job_type,
+                video_hash,
+                _now(),
+                json.dumps(request_json, ensure_ascii=False),
+            ),
         )
-    logger.debug("创建 job: id=%s type=%s", jid, job_type)
+    logger.debug("创建 job: id=%s type=%s hash=%s", jid, job_type, video_hash)
     return jid
 
 
@@ -124,29 +155,22 @@ def get_job(job_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
-def get_pending_job_by_request_field(job_type: str, json_path: str, value: str) -> str | None:
-    """查询指定 job_type 中，request_json 某字段匹配、且状态为 queued/running 的 job_id。
+def get_pending_job_by_video_hash(job_type: str, video_hash: str) -> str | None:
+    """查询指定 job_type + video_hash 且状态为 queued/running 的 job_id。
 
     用于提交任务前的去重校验。
-
-    Args:
-        job_type: job_type 值（如 'describe'）。
-        json_path: JSON 路径表达式，如 '$.video_hash'。
-        value: 匹配值。
-
-    Returns:
-        匹配的 job_id，无匹配返回 None。
     """
+    if not video_hash:
+        return None
     with _db()() as curs:
-        row = curs.execute(
-            SQL_GET_PENDING_JOB_BY_REQUEST_FIELD, (job_type, json_path, value)
-        ).fetchone()
+        row = curs.execute(SQL_GET_PENDING_JOB_BY_VIDEO_HASH, (job_type, video_hash)).fetchone()
     return row[0] if row else None
 
 
 _JOB_COLUMNS = [
     "job_id",
     "job_type",
+    "video_hash",
     "status",
     "created_at",
     "started_at",
@@ -162,7 +186,7 @@ _JOB_COLUMNS = [
 
 
 def _row_to_dict(row) -> dict:
-    return dict(zip(_JOB_COLUMNS, row, strict=False))
+    return dict(zip(_JOB_COLUMNS, row, strict=True))
 
 
 def _serialize(val) -> str | None:
