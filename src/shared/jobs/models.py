@@ -41,6 +41,16 @@ VALUES (?, ?, 'queued', ?, 0, ?)
 
 SQL_GET_JOB = "SELECT * FROM jobs WHERE job_id = ?"
 
+# 查询指定 job_type + request_json 中某字段匹配的未完成任务
+SQL_GET_PENDING_JOB_BY_REQUEST_FIELD = """
+SELECT job_id FROM jobs
+WHERE job_type = ?
+  AND json_extract(request_json, ?) = ?
+  AND status IN ('queued', 'running')
+ORDER BY created_at DESC
+LIMIT 1
+"""
+
 SQL_UPDATE_STATUS_TPL = """
 UPDATE jobs
 SET status = COALESCE(?, status),
@@ -112,6 +122,26 @@ def get_job(job_id: str) -> dict | None:
     if row is None:
         return None
     return _row_to_dict(row)
+
+
+def get_pending_job_by_request_field(job_type: str, json_path: str, value: str) -> str | None:
+    """查询指定 job_type 中，request_json 某字段匹配、且状态为 queued/running 的 job_id。
+
+    用于提交任务前的去重校验。
+
+    Args:
+        job_type: job_type 值（如 'describe'）。
+        json_path: JSON 路径表达式，如 '$.video_hash'。
+        value: 匹配值。
+
+    Returns:
+        匹配的 job_id，无匹配返回 None。
+    """
+    with _db()() as curs:
+        row = curs.execute(
+            SQL_GET_PENDING_JOB_BY_REQUEST_FIELD, (job_type, json_path, value)
+        ).fetchone()
+    return row[0] if row else None
 
 
 _JOB_COLUMNS = [

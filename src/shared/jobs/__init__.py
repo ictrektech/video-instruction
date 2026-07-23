@@ -37,6 +37,7 @@ from shared.jobs.models import (
     _now,
     create_job,
     get_job,
+    get_pending_job_by_request_field,
     init_db,
     update_job,
 )
@@ -53,9 +54,11 @@ __all__ = [
     "build_job_status_response",
     "create_job",
     "get_job",
+    "get_pending_job_by_request_field",
     "update_job",
     "enqueue_job",
     "run_worker",
+    "try_duplicate_job",
     "cleanup_expired",
 ]
 
@@ -118,6 +121,16 @@ def enqueue_job(
 
     logger.info("enqueue_job: id=%s type=%s", jid, job_type)
     return jid
+
+
+def try_duplicate_job(job_type: str, json_path: str, value: str) -> str | None:
+    """查询相同参数的未完成任务，有则返回已有 job_id，无则返回 None。"""
+    existing = get_pending_job_by_request_field(job_type, json_path, value)
+    if not existing:
+        return None
+
+    logger.info("%s job 已存在，复用: id=%s", job_type, existing)
+    return existing
 
 
 def run_worker(service: str) -> None:

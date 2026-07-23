@@ -10,7 +10,12 @@ from scene_detect.schemas.jobs import DetectJobRequest
 from scene_detect.utils import resolve_video_path as resolve_detect_video_path
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
-from shared.jobs import build_job_status_response, enqueue_job, get_job
+from shared.jobs import (
+    build_job_status_response,
+    enqueue_job,
+    get_job,
+    try_duplicate_job,
+)
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
 
@@ -38,6 +43,17 @@ async def submit_detect_job(
         req.threshold if req.threshold is not None else detect_settings.video_scene_threshold
     )
     max_scenes = req.max_scenes if req.max_scenes is not None else detect_settings.video_max_scenes
+
+    # 去重：相同 video_path 有未完成任务时复用
+    dup = try_duplicate_job("scene_detect", "$.video_path", video_path)
+    if dup:
+        return ResponseDTO.ok(
+            JobSubmitResponse(
+                job_id=dup,
+                status="queued",
+                poll_url=f"/api/v2/scenes/detect/jobs/{dup}",
+            )
+        )
 
     # 原子化：创建 jobs 行 + enqueue Huey task
     request_data = {

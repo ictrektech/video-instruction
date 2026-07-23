@@ -7,7 +7,12 @@ from fastapi import APIRouter
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
-from shared.jobs import build_job_status_response, enqueue_job, get_job
+from shared.jobs import (
+    build_job_status_response,
+    enqueue_job,
+    get_job,
+    try_duplicate_job,
+)
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
 from structure.core.settings import settings
@@ -52,6 +57,17 @@ async def submit_structure_job(
                 BusinessErrorCode.JOB_NOT_FOUND,
                 f"detect_job_id={req.detect_job_id}",
             )
+
+    # 去重：相同 video_path 有未完成任务时复用
+    dup = try_duplicate_job("structure", "$.video_path", abs_path)
+    if dup:
+        return ResponseDTO.ok(
+            JobSubmitResponse(
+                job_id=dup,
+                status="queued",
+                poll_url=f"/api/v2/video/structure/jobs/{dup}",
+            )
+        )
 
     # 构建 request data
     scenes_data = [s.model_dump() for s in req.scenes] if req.scenes else None

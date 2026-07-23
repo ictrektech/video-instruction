@@ -6,7 +6,12 @@ from fastapi import APIRouter
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
-from shared.jobs import build_job_status_response, enqueue_job, get_job
+from shared.jobs import (
+    build_job_status_response,
+    enqueue_job,
+    get_job,
+    try_duplicate_job,
+)
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
 from structure.schemas.description import DescribeSceneCommand
@@ -25,7 +30,21 @@ router = APIRouter()
 async def submit_describe_job(
     command: DescribeSceneCommand,
 ) -> ResponseDTO[JobSubmitResponse]:
-    """提交场景描述异步任务。"""
+    """提交场景描述异步任务。
+
+    相同 video_hash 已有未完成任务（queued/running）时，直接返回现有 job 信息。
+    """
+    # 去重：相同 video_hash 有未完成任务时复用
+    dup = try_duplicate_job("describe", "$.video_hash", command.video_hash)
+    if dup:
+        return ResponseDTO.ok(
+            JobSubmitResponse(
+                job_id=dup,
+                status="queued",
+                poll_url=f"/api/v2/video/describe/jobs/{dup}",
+            )
+        )
+
     request_data = command.model_dump()
 
     from structure.services.tasks import run_describe_scenes
