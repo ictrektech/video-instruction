@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     data_base_path: str = Field("/data/video-structured", description="视频文件基础路径前缀")
     video_scene_threshold: float = Field(27.0, description="场景检测阈值（越大越不敏感）")
     video_max_scenes: int = Field(200, description="最大场景数限制")
+    # 管道优化：scale=640 切点稳；threads=2 兼顾多 worker（见 docker-compose environment）
+    video_detect_scale_width: int = Field(
+        640,
+        description="检测管道 scale 宽度，0=不缩放；推荐 640",
+    )
+    video_decode_threads: int = Field(
+        2,
+        description="ffmpeg -threads；1=保守，2~4=更快，0=auto",
+    )
 
     model_config = SettingsConfigDict(
         env_file=("src/scene_detect/.env", ".env"),

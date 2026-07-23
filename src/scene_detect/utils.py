@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypeVar
+
+T = TypeVar("T")
 
 
 def resolve_video_path(video_path: str, base_path: str) -> str:
@@ -14,3 +17,8 @@ def resolve_video_path(video_path: str, base_path: str) -> str:
     if video_path.startswith("/"):
         return video_path
     return str(Path(base_path) / video_path)
+
+
+def coalesce(value: T | None, default: T) -> T:
+    """``None`` 时回退到 default，保留 0/False 等合法值。"""
+    return default if value is None else value

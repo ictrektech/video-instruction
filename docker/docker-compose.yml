@@ -24,6 +24,9 @@ services:
       APP_PORT: 8910
       DATA_BASE_PATH: /photos
       CACHE_BASE_PATH: /data/video-structure-cache
+      # 场景检测管道：scale=640 切点稳定；threads=2 兼顾多 worker
+      VIDEO_DETECT_SCALE_WIDTH: "640"
+      VIDEO_DECODE_THREADS: "2"
     volumes:
       - /data:/data:ro
       - ../log:/app/log

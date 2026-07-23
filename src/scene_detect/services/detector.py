@@ -21,60 +21,66 @@ def detect_scenes(
     video_path: str,
     threshold: float,
     max_scenes: int,
+    *,
+    scale_width: int | None = None,
+    decode_threads: int | None = None,
 ) -> tuple[list[SceneBoundary], SceneMetadata, list[WarningDTO]]:
-    """用 PySceneDetect 检测场景边界（单线程 ffmpeg 管道解码）。
+    """用 PySceneDetect 检测场景边界（ffmpeg 管道解码）。
 
-    Args:
-        video_path: 视频文件绝对路径。
-        threshold: 场景检测阈值（越大越不敏感）。
-        max_scenes: 最大场景数限制，0 表示不限制。
+    默认从 settings 读取管道参数：
+      - ``video_detect_scale_width``（0=不缩放）
+      - ``video_decode_threads``
 
-    Returns:
-        (boundaries, metadata, warnings)
+    仅缩放、不降帧时，帧号/时间戳与原片对齐。
     """
+    from scene_detect.core.settings import settings
+
+    if scale_width is None:
+        scale_width = settings.video_detect_scale_width
+    if decode_threads is None:
+        decode_threads = settings.video_decode_threads
+
     warnings: list[WarningDTO] = []
 
-    # Step 1: 用 ffprobe 获取元信息
+    # Step 1: 用 ffprobe 获取元信息（始终为原片）
     metadata = _extract_metadata(video_path)
     fps = metadata.fps
     total_frames = metadata.total_frames
-    width = metadata.width
-    height = metadata.height
 
     # Step 2: 场景检测
     fs: FfmpegVideoStream | None = None
     try:
-        fs = FfmpegVideoStream(video_path, width, height, fps, total_frames)
+        fs = FfmpegVideoStream(
+            video_path,
+            metadata.width,
+            metadata.height,
+            fps,
+            total_frames,
+            scale_width=scale_width,
+            decode_threads=decode_threads,
+        )
+        logger.info(
+            "scene-detect 管道: src=%dx%d scale=%s thr=%s detect=%dx%d",
+            metadata.width,
+            metadata.height,
+            scale_width if scale_width > 0 else "off",
+            decode_threads,
+            *fs.frame_size,
+        )
+
         scene_manager = SceneManager()
+        # 缩放已在 ffmpeg 完成，关闭库内二次 downscale
+        scene_manager.auto_downscale = False
+        scene_manager.downscale = 1
         scene_manager.add_detector(ContentDetector(threshold=threshold))
         scene_manager.detect_scenes(video=fs)
-        scene_list = scene_manager.get_scene_list()
 
-        boundaries: list[SceneBoundary] = []
-        for idx, (start, end) in enumerate(scene_list):
-            start_frame = max(0, start.get_frames())
-            end_frame = max(start_frame, end.get_frames() - 1)
-            boundaries.append(
-                SceneBoundary(
-                    scene_index=idx,
-                    start_frame=start_frame,
-                    end_frame=end_frame,
-                    start_time=_frame_to_time(start_frame, fps),
-                    end_time=_frame_to_time(end_frame + 1, fps),
-                )
-            )
-
+        boundaries = [
+            _boundary_from_range(idx, _tc_frame(start), _tc_frame(end), fps)
+            for idx, (start, end) in enumerate(scene_manager.get_scene_list())
+        ]
         if not boundaries:
-            end_frame = max(0, total_frames - 1)
-            boundaries.append(
-                SceneBoundary(
-                    scene_index=0,
-                    start_frame=0,
-                    end_frame=end_frame,
-                    start_time=0.0,
-                    end_time=_frame_to_time(end_frame + 1, fps),
-                )
-            )
+            boundaries = [_full_video_boundary(total_frames, fps)]
 
         if max_scenes > 0 and len(boundaries) > max_scenes:
             warnings.append(
@@ -96,27 +102,44 @@ def detect_scenes(
                 scope="scenes",
             )
         )
-        end_frame = max(0, total_frames - 1)
-        return (
-            [
-                SceneBoundary(
-                    scene_index=0,
-                    start_frame=0,
-                    end_frame=end_frame,
-                    start_time=0.0,
-                    end_time=_frame_to_time(end_frame + 1, fps),
-                )
-            ],
-            metadata,
-            warnings,
-        )
+        return [_full_video_boundary(total_frames, fps)], metadata, warnings
     finally:
         if fs is not None:
             fs.close()
 
 
+def _boundary_from_range(idx: int, start_tc: int, end_tc: int, fps: float) -> SceneBoundary:
+    """PySceneDetect 的 end 为半开区间，转为闭区间帧边界。"""
+    start_frame = max(0, start_tc)
+    end_frame = max(start_frame, end_tc - 1)
+    return SceneBoundary(
+        scene_index=idx,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        start_time=_frame_to_time(start_frame, fps),
+        end_time=_frame_to_time(end_frame + 1, fps),
+    )
+
+
+def _full_video_boundary(total_frames: int, fps: float) -> SceneBoundary:
+    end_frame = max(0, total_frames - 1)
+    return SceneBoundary(
+        scene_index=0,
+        start_frame=0,
+        end_frame=end_frame,
+        start_time=0.0,
+        end_time=_frame_to_time(end_frame + 1, fps),
+    )
+
+
+def _tc_frame(tc: FrameTimecode) -> int:
+    """兼容 scenedetect 0.7+ frame_num 与旧 get_frames()。"""
+    if hasattr(tc, "frame_num"):
+        return int(tc.frame_num)
+    return int(tc.get_frames())
+
+
 def _extract_metadata(video_path: str) -> SceneMetadata:
-    """用 ffprobe 提取视频元信息。"""
     from shared.core.ffprobe import query_video_metadata
 
     info = query_video_metadata(video_path)
@@ -135,11 +158,19 @@ def _frame_to_time(frame: int, fps: float) -> float:
     return round(frame / fps, 6)
 
 
-class FfmpegVideoStream(VideoStream):
-    """PySceneDetect 兼容的 VideoStream，基于单线程 ffmpeg 管道。
+def _scaled_size(width: int, height: int, scale_width: int) -> tuple[int, int]:
+    """原片宽大于目标宽时按比例缩小；高度取偶以适配常见编码器约束。"""
+    if scale_width <= 0 or width <= scale_width:
+        return width, height
+    scaled_h = max(2, int(round(height * scale_width / width)) // 2 * 2)
+    return scale_width, scaled_h
 
-    使用 ``-threads 1`` 限制 h264 解码器为单线程，避免 OpenCV 后端
-    无节制占用 CPU（700%+ 峰值）。
+
+class FfmpegVideoStream(VideoStream):
+    """PySceneDetect 兼容的 VideoStream（ffmpeg 管道）。
+
+    - ``scale_width > 0``: 管道内 scale，降低检测像素量
+    - ``decode_threads``: ffmpeg ``-threads``（1 保守，2~4 更快，0=auto）
     """
 
     BACKEND_NAME = "ffmpeg_pipe"
@@ -151,37 +182,42 @@ class FfmpegVideoStream(VideoStream):
         height: int,
         fps: float,
         total_frames: int,
+        *,
+        scale_width: int = 0,
+        decode_threads: int = 1,
     ):
-        self._width = width
-        self._height = height
         self._fps = fps
         self._total_frames = total_frames
         self._frame_number = 0
-
+        self._width, self._height = _scaled_size(width, height, scale_width)
         if self._width <= 0 or self._height <= 0:
             raise ValueError(f"无效视频尺寸: {self._width}x{self._height}")
         self._frame_bytes = self._width * self._height * 3
 
+        threads = int(decode_threads)
+        if threads < 0:
+            threads = 1
+
+        cmd: list[str] = [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-threads",
+            str(threads),
+            "-i",
+            video_path,
+            "-an",
+        ]
+        if (self._width, self._height) != (width, height):
+            cmd += ["-vf", f"scale={self._width}:{self._height}"]
+        cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+
         self._r_fd, w_fd = os.pipe()
         self._proc: subprocess.Popen | None = None
         try:
-            self._proc = subprocess.Popen(  # noqa: S603 — video_path validated upstream from upload system
-                [
-                    shutil.which("ffmpeg") or "ffmpeg",
-                    "-nostdin",
-                    "-loglevel",
-                    "error",
-                    "-threads",
-                    "1",
-                    "-i",
-                    video_path,
-                    "-an",
-                    "-f",
-                    "rawvideo",
-                    "-pix_fmt",
-                    "bgr24",
-                    "-",
-                ],
+            self._proc = subprocess.Popen(  # noqa: S603 — video_path validated upstream
+                cmd,
                 stdout=w_fd,
                 stderr=subprocess.DEVNULL,
                 pass_fds=(w_fd,),
@@ -198,7 +234,6 @@ class FfmpegVideoStream(VideoStream):
         self._duration: FrameTimecode | None = None
         if self._total_frames > 0:
             self._duration = self._timecode_base + self._total_frames
-
         self._name = os.path.basename(video_path)
         self._path = video_path
 

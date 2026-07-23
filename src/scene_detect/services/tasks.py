@@ -24,6 +24,8 @@ def run_detect_scenes(
     *,
     threshold: float = 27.0,
     max_scenes: int = 0,
+    scale_width: int | None = None,
+    decode_threads: int | None = None,
     task=None,  # injected by context=True
 ) -> list[dict]:
     """Huey 任务：执行场景检测并更新 jobs 状态。
@@ -33,6 +35,8 @@ def run_detect_scenes(
         video_path: 视频绝对路径。
         threshold: 场景检测阈值。
         max_scenes: 最大场景数，0 不限制。
+        scale_width: 管道 scale 宽度覆盖；None 用 settings。
+        decode_threads: 解码线程数覆盖；None 用 settings。
         task: Huey Task 实例（由 context=True 注入）。
 
     Returns:
@@ -44,7 +48,13 @@ def run_detect_scenes(
     try:
         from scene_detect.services.detector import detect_scenes
 
-        boundaries, _metadata, _warnings = detect_scenes(video_path, threshold, max_scenes)
+        boundaries, _metadata, _warnings = detect_scenes(
+            video_path,
+            threshold,
+            max_scenes,
+            scale_width=scale_width,
+            decode_threads=decode_threads,
+        )
 
         scenes = [
             {
@@ -66,10 +76,12 @@ def run_detect_scenes(
         )
 
         logger.info(
-            "scene-detect 完成: job=%s scenes=%d elapsed=%ds",
+            "scene-detect 完成: job=%s scenes=%d elapsed=%ds scale=%s thr=%s",
             job_id,
             len(scenes),
             finished_at - started_at,
+            scale_width,
+            decode_threads,
         )
         return scenes
 
