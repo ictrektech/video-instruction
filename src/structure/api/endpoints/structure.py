@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from logging import getLogger
-from pathlib import Path
 
 from fastapi import APIRouter
 
@@ -13,21 +12,11 @@ from structure.schemas.video import (
     StructureResultDTO,
 )
 from structure.services.video import pipeline as video_service
+from structure.utils import resolve_video_path
 
 logger = getLogger(__name__)
 
 router = APIRouter()
-
-
-def _resolve_video_path(video_path: str) -> str:
-    """解析视频路径到容器内可访问的绝对路径。
-
-    - 绝对路径（以 ``/`` 开头）→ 直接使用（宿主机路径 = 容器内路径，由 volume 映射保证）
-    - 相对路径 → 拼接 ``data_base_path``（兼容旧模式，如 immich 路径）
-    """
-    if video_path.startswith("/"):
-        return video_path
-    return str(Path(settings.data_base_path) / video_path)
 
 
 @router.post(
@@ -47,7 +36,7 @@ async def structure_video(
     - 可传入 ``scenes`` 指定场景边界。
     - 返回结构包含场景列表和九宫格缩略图路径（相对于 cache_base_path）。
     """
-    abs_path = _resolve_video_path(command.video_path)
+    abs_path = resolve_video_path(command.video_path, settings.data_base_path)
     dto = await video_service.structure(command, abs_path)
     return ResponseDTO.ok(dto)
 
@@ -61,6 +50,6 @@ async def delete_cache(
     command: CacheClearCommand,
 ) -> ResponseDTO[None]:
     """清除指定视频的缓存（九宫格图片缓存元数据）。"""
-    abs_path = _resolve_video_path(command.video_path)
+    abs_path = resolve_video_path(command.video_path, settings.data_base_path)
     await video_service.clear_cache(abs_path)
     return ResponseDTO.ok(None)

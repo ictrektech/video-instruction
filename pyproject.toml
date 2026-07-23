@@ -10,6 +10,7 @@ dependencies = [
   "pydantic-settings>=2.6.0",
   "pyyaml>=6.0.3",
   "rich>=13.7.0",
+  "huey>=3.2.1",
 ]
 
 [build-system]
@@ -22,6 +23,8 @@ packages = ["src/shared"]
 [project.scripts]
 scene-detect = "scene_detect.__main__:main"
 structure = "structure.__main__:main"
+scene-detect-worker = "scene_detect.worker:main"
+structure-worker = "structure.worker:main"
 
 [project.optional-dependencies]
 scene-detect = [

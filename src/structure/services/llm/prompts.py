@@ -29,7 +29,6 @@ SYSTEM_PROMPT = SYSTEM_PROMPT = """## 角色
 """
 
 
-
 # 用户消息模板
 # 预留 {scene_index} 参数以便需要时使用
 USER_PROMPT_TEMPLATE = "## 场景 {scene_index}\n\n描述这组场景拼图的内容："

@@ -1,0 +1,194 @@
+"""jobs 表 schema 与 CRUD 操作。
+
+jobs 表与 Huey 共用同一 SQLite 文件，API 通过该表查询任务状态。
+"""
+
+from __future__ import annotations
+
+import json
+import time
+import uuid
+from logging import getLogger
+
+from shared.jobs.settings import settings
+
+logger = getLogger(__name__)
+
+# ── SQL ──────────────────────────────────────────────────────────────────
+
+SQL_CREATE_JOBS_TABLE = """
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id       TEXT PRIMARY KEY,
+    job_type     TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'queued',
+    created_at   INTEGER NOT NULL,
+    started_at   INTEGER,
+    finished_at  INTEGER,
+    attempt      INTEGER NOT NULL DEFAULT 0,
+    request_json TEXT NOT NULL,
+    result_json  TEXT,
+    result_ref   TEXT,
+    error_code   TEXT,
+    error_message TEXT,
+    error_detail TEXT
+)
+"""
+
+SQL_INSERT_JOB = """
+INSERT INTO jobs (job_id, job_type, status, created_at, attempt, request_json)
+VALUES (?, ?, 'queued', ?, 0, ?)
+"""
+
+SQL_GET_JOB = "SELECT * FROM jobs WHERE job_id = ?"
+
+SQL_UPDATE_STATUS_TPL = """
+UPDATE jobs
+SET status = COALESCE(?, status),
+    started_at  = COALESCE(?, started_at),
+    finished_at = COALESCE(?, finished_at),
+    attempt     = COALESCE(?, attempt),
+    result_json = COALESCE(?, result_json),
+    result_ref  = COALESCE(?, result_ref),
+    error_code  = COALESCE(?, error_code),
+    error_message = COALESCE(?, error_message),
+    error_detail  = COALESCE(?, error_detail)
+WHERE job_id = ?
+"""
+
+SQL_CLEANUP_EXPIRED = """
+DELETE FROM jobs
+WHERE status IN ('succeeded', 'failed')
+  AND finished_at < ?
+  AND job_id NOT IN (
+    SELECT DISTINCT json_extract(request_json, '$.detect_job_id')
+    FROM jobs
+    WHERE job_type = 'structure'
+      AND json_extract(request_json, '$.detect_job_id') IS NOT NULL
+  )
+"""
+
+# ── Public helpers ───────────────────────────────────────────────────────
+
+
+def _now() -> int:
+    return int(time.time())
+
+
+def _db():
+    """获取 Huey storage 的 db() 上下文管理器（线程安全，带 self.lock + begin exclusive）。"""
+    from shared.jobs.huey import huey
+
+    return huey.storage.db
+
+
+def init_db() -> None:
+    """初始化 jobs 表（幂等）。应用启动时调用。"""
+    with _db()(commit=True) as curs:
+        curs.execute(SQL_CREATE_JOBS_TABLE)
+    logger.info("jobs 表已就绪 (db=%s)", settings.huey_db_path)
+
+
+def create_job(
+    job_type: str,
+    request_json: dict,
+    *,
+    job_id: str | None = None,
+) -> str:
+    """创建 jobs 行并返回 job_id（UUID）。"""
+    jid = job_id or str(uuid.uuid4())
+    with _db()(commit=True) as curs:
+        curs.execute(
+            SQL_INSERT_JOB,
+            (jid, job_type, _now(), json.dumps(request_json, ensure_ascii=False)),
+        )
+    logger.debug("创建 job: id=%s type=%s", jid, job_type)
+    return jid
+
+
+def get_job(job_id: str) -> dict | None:
+    """按 job_id 查询 jobs 表，返回行 dict 或 None。"""
+    with _db()() as curs:
+        row = curs.execute(SQL_GET_JOB, (job_id,)).fetchone()
+    if row is None:
+        return None
+    return _row_to_dict(row)
+
+
+_JOB_COLUMNS = [
+    "job_id",
+    "job_type",
+    "status",
+    "created_at",
+    "started_at",
+    "finished_at",
+    "attempt",
+    "request_json",
+    "result_json",
+    "result_ref",
+    "error_code",
+    "error_message",
+    "error_detail",
+]
+
+
+def _row_to_dict(row) -> dict:
+    return dict(zip(_JOB_COLUMNS, row, strict=False))
+
+
+def _serialize(val) -> str | None:
+    """dict → JSON 字符串，其他值原样返回。"""
+    if val is None:
+        return None
+    if isinstance(val, dict | list):
+        return json.dumps(val, ensure_ascii=False)
+    return str(val)
+
+
+def update_job(job_id: str, **kwargs) -> None:
+    """更新 job 的指定字段。
+
+    支持的 kwargs 键：
+        status, started_at, finished_at, attempt,
+        result_json, result_ref,
+        error_code, error_message, error_detail
+
+    其中 result_json / result_ref 可传 dict，自动序列化为 JSON 字符串。
+    """
+    params = tuple(
+        _serialize(kwargs.get(k))
+        for k in (
+            "status",
+            "started_at",
+            "finished_at",
+            "attempt",
+            "result_json",
+            "result_ref",
+            "error_code",
+            "error_message",
+            "error_detail",
+        )
+    )
+    with _db()(commit=True) as curs:
+        curs.execute(SQL_UPDATE_STATUS_TPL, (*params, job_id))
+
+
+def cleanup_expired_jobs(max_age_days: int | None = None) -> int:
+    """删除超过 TTL 的已完成 job 行（被引用的 scene_detect 除外）。
+
+    Args:
+        max_age_days: TTL 天数，默认 settings.job_ttl_days。0 或 None 不清理。
+
+    Returns:
+        删除的行数。
+    """
+    ttl = max_age_days if max_age_days is not None else settings.job_ttl_days
+    if ttl <= 0:
+        return 0
+
+    deadline = _now() - ttl * 86400
+    with _db()(commit=True) as curs:
+        curs.execute(SQL_CLEANUP_EXPIRED, (deadline,))
+        deleted = curs.rowcount
+    if deleted:
+        logger.info("TTL 清理: 删除了 %d 行 (finished_at < %d)", deleted, deadline)
+    return deleted

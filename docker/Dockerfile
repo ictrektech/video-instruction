@@ -32,11 +32,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ src/
 COPY config/ config/
 COPY README.md ./
-# Install service-specific extras (or all if SERVICE=all)
+# Install all extras so any worker can process any task type
 RUN if [ "$SERVICE" = "all" ]; then \
       uv sync --frozen --no-dev --all-extras; \
     else \
-      uv sync --frozen --no-dev --extra "$SERVICE"; \
+      uv sync --frozen --no-dev --extra scene-detect --extra structure; \
     fi
 
 ENV PATH="/app/.venv/bin:$PATH"

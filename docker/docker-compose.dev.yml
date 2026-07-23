@@ -1,5 +1,7 @@
 name: video-instruction-dev
 
+
+
 services:
   scene-detection:
     build:
@@ -21,6 +23,8 @@ services:
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
+      # 共享 huey.db（jobs 表 + task 队列）
+      - ../data:/app/data
     environment:
       APP_ENV: dev
       DATA_BASE_PATH: /photos
@@ -35,7 +39,9 @@ services:
       - -c
       - |
         set -e
-        uv sync --frozen --extra dev --extra scene-detect
+        uv sync --frozen --extra dev --extra scene-detect --extra structure
+        # 后台启动 worker（与 API 同进程）
+        uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run scene-detect
 
   structure:
@@ -59,6 +65,8 @@ services:
       - video-instruction-venv-structure:/app/.venv
       # 写：集中式缓存（与输入路径解耦）
       - /data/video-structure-cache:/data/video-structure-cache
+      # 共享 huey.db（jobs 表 + task 队列）
+      - ../data:/app/data
     environment:
       APP_ENV: dev
       APP_PORT: 8911
@@ -79,9 +87,10 @@ services:
       - -c
       - |
         set -e
-        uv sync --frozen --extra dev --extra structure
+        uv sync --frozen --extra dev --extra scene-detect --extra structure
+        # 后台启动 worker（与 API 同进程）
+        uv run structure-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run structure
-
 volumes:
   video-instruction-venv-detection:
   video-instruction-venv-structure:

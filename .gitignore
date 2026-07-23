@@ -21,3 +21,5 @@ wheels/
 .trellis/
 AGENTS.md
 .coverage
+data/
+.pi/

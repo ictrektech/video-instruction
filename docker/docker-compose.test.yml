@@ -1,5 +1,7 @@
 name: video-instruction-test
 
+
+
 services:
   scene-detection:
     build:
@@ -9,7 +11,13 @@ services:
         SERVICE: scene-detect
     image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-detection:${IMAGE_TAG:-latest}
     container_name: test-video-detection
-    command: uv run scene-detect
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
+        exec uv run scene-detect
     ports:
       - "${SCENE_DETECTION_PORT:-8910}:8910"
     environment:
@@ -19,6 +27,7 @@ services:
     volumes:
       - ../log:/app/log
       - immich-photos:/data
+      - ../data:/app/data
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -31,7 +40,13 @@ services:
         SERVICE: structure
     image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-structure:${IMAGE_TAG:-latest}
     container_name: test-video-structure
-    command: uv run structure
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        uv run structure-worker --workers ${HUEY_WORKERS:-2} &
+        exec uv run structure
     ports:
       - "${STRUCTURE_PORT:-8911}:8911"
     environment:
@@ -45,10 +60,10 @@ services:
     volumes:
       - ../log:/app/log
       - immich-photos:/data
+      - ../data:/app/data
     networks:
       - video-instruction-net
     restart: unless-stopped
-
 volumes:
   immich-photos:
     name: dev-immich-photos

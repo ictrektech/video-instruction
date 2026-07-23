@@ -30,7 +30,7 @@ COPY pyproject.toml uv.lock ./
 RUN if [ "$SERVICE" = "all" ]; then \
       uv sync --frozen --all-extras --no-install-project; \
     else \
-      uv sync --frozen --extra dev --extra "$SERVICE" --no-install-project; \
+      uv sync --frozen --extra dev --extra scene-detect --extra structure --no-install-project; \
     fi
 
 # Install debugpy for remote debugging
