@@ -69,19 +69,13 @@ async def submit_structure_job(
     # 原子化：创建 jobs 行 + enqueue Huey task
     from structure.services.tasks import run_structure
 
+    task_kwargs = {k: v for k, v in request_data.items() if k != "video_path"}
     job_id = enqueue_job(
         "structure",
         request_data,
         run_structure.task_class,
         task_args=(abs_path,),
-        task_kwargs={
-            "scenes": scenes_data,
-            "detect_job_id": req.detect_job_id,
-            "frame_grid": req.frame_grid,
-            "force": req.force,
-            "grid_rows": req.grid_rows,
-            "grid_cols": req.grid_cols,
-        },
+        task_kwargs=task_kwargs,
     )
 
     logger.info("提交 structure job: id=%s video=%s", job_id, abs_path)

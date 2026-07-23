@@ -25,9 +25,13 @@ services:
       - video-instruction-venv-detection:/app/.venv
       # 共享 huey.db（jobs 表 + task 队列）
       - ../data:/app/data
+      # worker 也可能处理 structure 任务，需要可写的缓存目录
+      - /data/video-structure-cache:/data/video-structure-cache
     environment:
       APP_ENV: dev
+      APP_PORT: 8910
       DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/

@@ -23,11 +23,14 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8910
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
     volumes:
       - ../log:/app/log
-      - immich-photos:/data
+      - immich-photos:/photos
       - ../data:/app/data
+      # worker 也可能处理 structure 任务，需要可写的缓存目录
+      - /data/video-structure-cache:/data/video-structure-cache
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -52,15 +55,17 @@ services:
     environment:
       APP_ENV: prod
       APP_PORT: 8911
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
       LLM_MODEL_NAME: minicpm-v:latest
       LLM_MAX_CONCURRENCY: 20
     volumes:
       - ../log:/app/log
-      - immich-photos:/data
+      - immich-photos:/photos
       - ../data:/app/data
+      - /data/video-structure-cache:/data/video-structure-cache
     networks:
       - video-instruction-net
     restart: unless-stopped

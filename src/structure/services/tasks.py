@@ -131,5 +131,74 @@ def run_structure(
         raise
 
 
+@huey.task(context=True)
+def run_describe_scenes(
+    job_id: str,
+    video_hash: str,
+    *,
+    force: bool = False,
+    model_cfg: dict | None = None,
+    task=None,  # injected by context=True
+) -> dict:
+    """Huey 任务：执行场景描述并更新 jobs 状态。
+
+    Args:
+        job_id: jobs 表主键。
+        video_hash: 视频内容哈希。
+        force: 是否强制重新描述。
+        model_cfg: 大模型配置 dict（ModelConfig.model_dump()），None 则使用服务端默认。
+        task: Huey Task 实例（由 context=True 注入）。
+
+    Returns:
+        SceneDescriptionResult dict。
+    """
+    started_at = int(time.time())
+    update_job(job_id, status="running", started_at=started_at, attempt=1)
+
+    try:
+        from structure.core.settings import settings as struct_settings
+        from structure.schemas.model_config import ModelConfig
+        from structure.services.video import description as description_service
+
+        cfg = ModelConfig(**model_cfg) if model_cfg else None
+        result = asyncio.run(
+            description_service.describe_scenes(
+                video_hash=video_hash,
+                settings=struct_settings,
+                model_cfg=cfg,
+                force=force,
+            )
+        )
+
+        finished_at = int(time.time())
+        update_job(
+            job_id,
+            status="succeeded",
+            finished_at=finished_at,
+            result_json=result.model_dump(mode="json"),
+        )
+
+        logger.info(
+            "describe 完成: job=%s hash=%s scenes=%d elapsed=%ds",
+            job_id,
+            video_hash,
+            len(result.descriptions),
+            finished_at - started_at,
+        )
+        return result.model_dump()
+
+    except Exception as exc:
+        finished_at = int(time.time())
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=finished_at,
+            error_code="DESCRIBE_ERROR",
+            error_message=str(exc),
+        )
+        logger.exception("describe 失败: job=%s", job_id)
+        raise
+
+
 # Worker 通过 TASKS 显式引用本模块已注册的 task，避免 side-effect-only import
-TASKS = (run_structure,)
+TASKS = (run_structure, run_describe_scenes)

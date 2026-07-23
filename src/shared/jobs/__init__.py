@@ -116,7 +116,7 @@ def enqueue_job(
             (huey.name, memoryview(data), priority if priority is not None else 0),
         )
 
-    logger.debug("enqueue_job: id=%s type=%s", jid, job_type)
+    logger.info("enqueue_job: id=%s type=%s", jid, job_type)
     return jid
 
 
@@ -129,12 +129,13 @@ def run_worker(service: str) -> None:
     import argparse
     import signal
     import sys
-    from logging import getLogger
 
     from scene_detect.services.tasks import TASKS as detect_tasks
+    from shared.core.logging import configure_logging
+    from structure.core.settings import settings
     from structure.services.tasks import TASKS as structure_tasks
 
-    logger = getLogger(__name__)
+    configure_logging(level="DEBUG", path=settings.log_config_path)
 
     parser = argparse.ArgumentParser(description=f"{service} Huey Worker")
     parser.add_argument("--workers", type=int, default=None, help="并行线程数（默认 4）")

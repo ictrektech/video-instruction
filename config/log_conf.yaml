@@ -60,6 +60,10 @@ loggers:
   uvicorn.access:
     handlers: []
     propagate: no
+  huey:
+    level: INFO
+    handlers: [default, server_file]
+    propagate: no
 root:
   handlers: [default, server_file]
   propagate: no

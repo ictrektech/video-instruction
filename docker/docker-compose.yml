@@ -23,11 +23,14 @@ services:
       APP_ENV: prod
       APP_PORT: 8910
       DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
     volumes:
       - /data:/data:ro
       - ../log:/app/log
       - ${UPLOAD_LOCATION}/photos:/photos
       - ../data:/app/data
+      # worker 也可能处理 structure 任务，需要可写的缓存目录
+      - /data/video-structure-cache:/data/video-structure-cache
     networks:
       - video-instruction-net
     restart: unless-stopped
