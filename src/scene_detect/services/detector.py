@@ -192,7 +192,7 @@ def _post_process_scenes(
     """按策略执行检测后处理，并把压缩信息写入 warnings。"""
     merged_scenes = merge_short_scenes(scenes, policy.min_scene_len_sec)
     if len(merged_scenes) < len(scenes):
-        logger.warning(
+        logger.info(
             "scene-detect 短场景已合并: before=%d after=%d min_scene_len=%.2fs",
             len(scenes),
             len(merged_scenes),
@@ -214,7 +214,7 @@ def _post_process_scenes(
         and len(final_scenes) < len(merged_scenes)
         and len(merged_scenes) > max_scene_count
     ):
-        logger.warning(
+        logger.info(
             "scene-detect 场景数已压缩: before=%d after=%d max_scene_count=%d",
             len(merged_scenes),
             len(final_scenes),
