@@ -21,6 +21,14 @@ class SceneMetadata(BaseModel):
     height: int = Field(description="视频高度(像素)")
 
 
+class ScenePolicyDTO(BaseModel):
+    """本次检测实际生效的策略参数"""
+
+    threshold: float = Field(description="实际使用的场景检测阈值")
+    min_scene_len_sec: float = Field(description="短场景合并阈值(秒)")
+    max_scene_count: int = Field(description="实际使用的最大场景数")
+
+
 class WarningDTO(BaseModel):
     """警告信息 DTO"""
 
@@ -48,6 +56,7 @@ class DetectResult(BaseModel):
     """场景检测结果"""
 
     metadata: SceneMetadata = Field(description="视频元信息")
+    policy: ScenePolicyDTO = Field(description="本次检测实际生效的策略参数")
     scenes: list[SceneBoundary] = Field(description="场景边界列表")
     warnings: list[WarningDTO] = Field(default_factory=list, description="警告信息")
     elapsed_sec: float = Field(default=0.0, description="总耗时(秒)")

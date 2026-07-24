@@ -52,8 +52,8 @@ async def submit_detect_job(
     from scene_detect.services.tasks import run_detect_scenes
 
     task_kwargs = {
-        "threshold": coalesce(req.threshold, detect_settings.video_scene_threshold),
-        "max_scenes": coalesce(req.max_scenes, detect_settings.video_max_scenes),
+        "threshold": req.threshold,
+        "max_scenes": req.max_scenes,
         "scale_width": coalesce(req.scale_width, detect_settings.video_detect_scale_width),
         "decode_threads": coalesce(req.decode_threads, detect_settings.video_decode_threads),
     }

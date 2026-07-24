@@ -40,11 +40,11 @@ async def detect_scene(
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
     started_at = time.time()
-    boundaries, metadata, warnings = await asyncio.to_thread(
+    boundaries, metadata, policy, warnings = await asyncio.to_thread(
         detect_scenes,
         video_path,
-        coalesce(command.threshold, settings.video_scene_threshold),
-        coalesce(command.max_scenes, settings.video_max_scenes),
+        command.threshold,
+        command.max_scenes,
         scale_width=coalesce(command.scale_width, settings.video_detect_scale_width),
         decode_threads=coalesce(command.decode_threads, settings.video_decode_threads),
     )
@@ -52,6 +52,7 @@ async def detect_scene(
 
     result = DetectResult(
         metadata=metadata,
+        policy=policy,
         scenes=boundaries,
         warnings=warnings,
         elapsed_sec=elapsed_sec,
