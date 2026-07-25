@@ -36,9 +36,9 @@ class TestDetectTaskContract:
                     height=720,
                 ),
                 ScenePolicyDTO(
-                    threshold=26.0,
-                    min_scene_len_sec=0.5,
-                    max_scene_count=30,
+                    threshold=28.0,
+                    min_scene_len_sec=2.5,
+                    max_scene_count=20,
                 ),
                 [
                     WarningDTO(
@@ -84,9 +84,9 @@ class TestDetectTaskContract:
             "height": 720,
         }
         assert result["policy"] == {
-            "threshold": 26.0,
-            "min_scene_len_sec": 0.5,
-            "max_scene_count": 30,
+            "threshold": 28.0,
+            "min_scene_len_sec": 2.5,
+            "max_scene_count": 20,
         }
         assert result["warnings"] == [
             {

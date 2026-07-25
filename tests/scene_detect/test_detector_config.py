@@ -83,11 +83,11 @@ class TestScenePolicy:
     @pytest.mark.parametrize(
         ("duration", "expected"),
         [
-            (179.999, (26.0, 0.5, 30)),
-            (180.0, (27.0, 0.8, 80)),
-            (600.0, (27.0, 1.2, 150)),
-            (1800.0, (28.0, 1.8, 300)),
-            (5400.0, (29.0, 2.5, 500)),
+            (179.999, (28.0, 2.5, 20)),
+            (180.0, (29.0, 3.5, 40)),
+            (600.0, (30.0, 5.0, 80)),
+            (1800.0, (31.0, 8.0, 120)),
+            (5400.0, (32.0, 10.0, 200)),
         ],
     )
     def test_select_policy_at_duration_boundaries(self, duration, expected):
@@ -97,13 +97,13 @@ class TestScenePolicy:
     def test_resolve_uses_duration_policy_by_default(self):
         policy, threshold, max_scenes = _resolve_scene_settings(7200.0, None, None)
 
-        assert threshold == policy.threshold == 29.0
-        assert max_scenes == policy.max_scene_count == 500
+        assert threshold == policy.threshold == 32.0
+        assert max_scenes == policy.max_scene_count == 200
 
     def test_resolve_explicit_values_override_duration_policy(self):
         policy, threshold, max_scenes = _resolve_scene_settings(7200.0, 25.0, 42)
 
-        assert policy.threshold == 29.0
+        assert policy.threshold == 32.0
         assert threshold == 25.0
         assert max_scenes == 42
 
