@@ -129,9 +129,7 @@ def detect_scenes(
             boundaries = [_full_video_boundary(total_frames, fps)]
 
         # Step 4: 合并短场景，再按最大场景数做兜底压缩
-        final_boundaries = _post_process_scenes(
-            boundaries, policy, effective_max_scenes, warnings
-        )
+        final_boundaries = _post_process_scenes(boundaries, policy, effective_max_scenes, warnings)
         logger.info(
             "scene-detect 完成: video=%s raw_scenes=%d final_scenes=%d warnings=%d",
             os.path.basename(video_path),
@@ -287,9 +285,7 @@ def shrink_to_max_scene_count(
 
     shrunk = list(scenes)
     while len(shrunk) > max_scene_count and len(shrunk) > 1:
-        shortest_index = min(
-            range(len(shrunk)), key=lambda idx: _scene_duration_sec(shrunk[idx])
-        )
+        shortest_index = min(range(len(shrunk)), key=lambda idx: _scene_duration_sec(shrunk[idx]))
         if shortest_index < len(shrunk) - 1:
             shrunk[shortest_index + 1] = _merge_scene_pair(
                 shrunk[shortest_index],
@@ -337,9 +333,7 @@ def _reindex_scenes(scenes: list[SceneBoundary]) -> list[SceneBoundary]:
     ]
 
 
-def _boundary_from_range(
-    idx: int, start_tc: int, end_tc: int, fps: float
-) -> SceneBoundary:
+def _boundary_from_range(idx: int, start_tc: int, end_tc: int, fps: float) -> SceneBoundary:
     """PySceneDetect 的 end 为半开区间，转为闭区间帧边界。"""
     start_frame = max(0, start_tc)
     end_frame = max(start_frame, end_tc - 1)
@@ -493,9 +487,7 @@ class FfmpegVideoStream(VideoStream):
             return False
         self._frame_number += 1
         if decode:
-            return np.frombuffer(raw, dtype=np.uint8).reshape(
-                (self._height, self._width, 3)
-            )
+            return np.frombuffer(raw, dtype=np.uint8).reshape((self._height, self._width, 3))
         return True
 
     @property

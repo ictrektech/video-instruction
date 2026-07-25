@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Sequence
 from logging import getLogger
 from pathlib import Path
+from typing import Any
 
 from structure.core.settings import Settings
 from structure.schemas.video import SceneDTO, StructureResultDTO, VideoMetadataSchema, WarningDTO
@@ -198,9 +200,33 @@ def save_cached_result(
     logger.info("缓存已保存: %s", cache_dir)
 
 
-def clear_cache(video_hash: str, settings: Settings) -> None:
-    """删除指定视频的缓存目录。"""
-    cache_dir = get_cache_path(video_hash, settings)
+def invalidate_cache_dir(cache_dir: Path) -> None:
+    """删除结构缓存目录（_cached.json / grids / _descriptions.json）。"""
     if cache_dir.is_dir():
         shutil.rmtree(cache_dir)
-        logger.info("缓存已清除: %s", cache_dir)
+        logger.info("结构缓存已清理: %s", cache_dir)
+
+
+def clear_cache(video_hash: str, settings: Settings) -> None:
+    """按 video_hash 删除对应缓存目录。"""
+    invalidate_cache_dir(get_cache_path(video_hash, settings))
+
+
+def scenes_match(request_scenes: Sequence[Any], cached_scenes: Sequence[Any]) -> bool:
+    """请求 scenes 与缓存 scenes 边界是否完全一致。
+
+    兼容请求侧 ``SceneBoundaryInput`` 与缓存侧 ``SceneDTO``。
+    """
+
+    def _key(scenes: Sequence[Any]) -> tuple[tuple[int, int, float, float], ...]:
+        return tuple(
+            (
+                int(scene.start_frame),
+                int(scene.end_frame),
+                round(float(scene.start_time), 6),
+                round(float(scene.end_time), 6),
+            )
+            for scene in scenes
+        )
+
+    return _key(request_scenes) == _key(cached_scenes)
