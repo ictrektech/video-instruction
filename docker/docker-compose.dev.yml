@@ -86,7 +86,7 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: ${UPLOAD_LOCATION}/photos
+      device: ${UPLOAD_LOCATION}
       o: bind
   video-instruction-venv-detection:
   video-instruction-venv-structure:
