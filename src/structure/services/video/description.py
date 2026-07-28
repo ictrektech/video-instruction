@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tempfile
 import time
 from asyncio import Semaphore, gather
@@ -57,6 +58,22 @@ def _save_descriptions(cache_dir: Path, result: SceneDescriptionResult) -> None:
         raise
 
 
+def _scene_grids_from_dir(cache_dir: Path) -> list[tuple[int, str]]:
+    """从持久化的 grid 图片目录恢复可描述的场景列表。"""
+    grids_dir = cache_dir / "grids"
+    if not grids_dir.is_dir():
+        return []
+
+    scene_grids: list[tuple[int, str]] = []
+    for image_path in grids_dir.glob("scene_*.jpg"):
+        match = re.fullmatch(r"scene_(\d+)\.jpg", image_path.name)
+        if match is None:
+            continue
+        scene_grids.append((int(match.group(1)) - 1, image_path.name))
+
+    return sorted(scene_grids, key=lambda item: item[0])
+
+
 async def describe_scenes(
     video_hash: str,
     settings: Settings,
@@ -85,9 +102,18 @@ async def describe_scenes(
     """
     cache_dir = get_cache_path(video_hash, settings)
 
-    # 1. 查找场景缓存
+    # 1. 查找场景缓存；未启用 JSON 缓存时从 grid 图片目录恢复场景列表
     cached_result = load_cached_result(cache_dir, settings.data_base_path)
-    if cached_result is None:
+    if cached_result is not None:
+        scene_grids = [
+            (scene.scene_index, scene.grid_image)
+            for scene in cached_result.scenes
+            if scene.grid_image is not None
+        ]
+    else:
+        scene_grids = _scene_grids_from_dir(cache_dir)
+
+    if not scene_grids:
         raise ApiException(BusinessErrorCode.VIDEO_SCENE_CACHE_MISS)
 
     # 2. 检查描述缓存
@@ -102,7 +128,6 @@ async def describe_scenes(
             return cached_descriptions
 
     # 3. 构造图片路径 & 并发描述
-    scenes = cached_result.scenes
     grids_dir = cache_dir / "grids"
 
     if model_cfg is None:
@@ -165,22 +190,11 @@ async def describe_scenes(
                 )
 
     start = time.monotonic()
-    tasks = [_describe_one(s.scene_index, s.grid_image) for s in scenes if s.grid_image is not None]
-    # 没有 grid_image 的场景标记为 skipped
-    skipped: list[SceneDescriptionItem] = [
-        SceneDescriptionItem(
-            scene_index=s.scene_index,
-            grid_image="",
-            status="skipped",
-        )
-        for s in scenes
-        if s.grid_image is None
-    ]
+    tasks = [_describe_one(scene_index, grid_image) for scene_index, grid_image in scene_grids]
 
     item_results: list[tuple[SceneDescriptionItem, WarningDTO | None]] = await gather(*tasks)
     results = [item for item, _ in item_results]
     warnings: list[WarningDTO] = [w for _, w in item_results if w is not None]
-    results.extend(skipped)
     elapsed = time.monotonic() - start
 
     # 按 scene_index 排序
