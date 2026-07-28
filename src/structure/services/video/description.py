@@ -94,6 +94,11 @@ async def describe_scenes(
     if not force:
         cached_descriptions = _load_cached_descriptions(cache_dir)
         if cached_descriptions is not None:
+            logger.info(
+                "视频 %s 场景描述缓存命中: %s",
+                video_hash,
+                _descriptions_cache_path(cache_dir),
+            )
             return cached_descriptions
 
     # 3. 构造图片路径 & 并发描述
@@ -108,6 +113,7 @@ async def describe_scenes(
         api_key=model_cfg.api_key,
         model_name=model_cfg.model_name,
         timeout=model_cfg.request_timeout or settings.llm_request_timeout,
+        trace_log=settings.llm_trace_log,
     )
 
     sem = Semaphore(model_cfg.max_concurrency)

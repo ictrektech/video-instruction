@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_model_name: str = Field("qwen2-vl-7b", description="LLM 模型名称")
     llm_max_concurrency: int = Field(5, description="并发描述的场景数")
     llm_request_timeout: int = Field(120, description="单次 LLM 请求超时秒数")
+    llm_trace_log: bool = Field(False, description="是否打印 LLM 请求/响应调试日志")
 
     model_config = SettingsConfigDict(
         env_file=("src/structure/.env", ".env"),
