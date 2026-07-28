@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from scene_detect.core.settings import settings
 from scene_detect.schemas.scene import DetectRequest, DetectResult
 from scene_detect.services.detector import detect_scenes
+from scene_detect.utils import coalesce, resolve_video_path
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.schemas.common.response import ResponseDTO
@@ -34,25 +35,24 @@ async def detect_scene(
     - 只检测场景边界，不进行任何结构化操作。
     - 返回场景列表（含 start_frame / end_frame / start_time / end_time）。
     """
-    video_path = Path(command.video_path)
-    if not video_path.is_absolute():
-        video_path = Path(settings.data_base_path) / video_path
-    if not video_path.is_file():
-        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, str(video_path))
-
-    threshold = (
-        command.threshold if command.threshold is not None else settings.video_scene_threshold
-    )
-    max_scenes = command.max_scenes if command.max_scenes is not None else settings.video_max_scenes
+    video_path = resolve_video_path(command.video_path, settings.data_base_path)
+    if not Path(video_path).is_file():
+        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
     started_at = time.time()
-    boundaries, metadata, warnings = await asyncio.to_thread(
-        detect_scenes, str(video_path), threshold, max_scenes
+    boundaries, metadata, policy, warnings = await asyncio.to_thread(
+        detect_scenes,
+        video_path,
+        command.threshold,
+        command.max_scenes,
+        scale_width=coalesce(command.scale_width, settings.video_detect_scale_width),
+        decode_threads=coalesce(command.decode_threads, settings.video_decode_threads),
     )
     elapsed_sec = round(time.time() - started_at, 2)
 
     result = DetectResult(
         metadata=metadata,
+        policy=policy,
         scenes=boundaries,
         warnings=warnings,
         elapsed_sec=elapsed_sec,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import tempfile
 import time
 from logging import getLogger
@@ -20,8 +19,10 @@ from structure.schemas.video import (
 )
 from structure.services.video.cache import (
     get_cache_path,
+    invalidate_cache_dir,
     load_cached_result,
     save_cached_result,
+    scenes_match,
 )
 from structure.services.video.frame_extract import (
     extract_scene_grids,
@@ -69,12 +70,15 @@ async def structure(
     cache_dir = get_cache_path(video_hash, settings)
     if not cmd.force and cache_dir.is_dir():
         cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.cache_base_path)
-        if cached is not None:
+        if cached is not None and scenes_match(cmd.scenes, cached.scenes):
             cached.elapsed_sec = round(time.time() - started_at, 2)
             cached.stage_timings["total"] = cached.elapsed_sec
             logger.info("缓存命中: %s", video_path)
             return cached
-        logger.info("缓存目录存在但无效，重新处理: %s", cache_dir)
+        logger.info("缓存未命中，重新处理: %s", cache_dir)
+
+    # miss / force：清旧产物，避免残留 grid 与过期描述
+    await asyncio.to_thread(invalidate_cache_dir, cache_dir)
 
     # ── Step 1: 提取元数据 ──────────────────────────────────────────
     t0 = time.time()
@@ -148,5 +152,4 @@ async def clear_cache(video_path: str) -> None:
     if not cache_dir.is_dir():
         logger.info("无缓存可清除: %s", video_hash)
         raise ApiException(BusinessErrorCode.VIDEO_CACHE_NOT_FOUND)
-    await asyncio.to_thread(shutil.rmtree, cache_dir)
-    logger.info("缓存已清除: %s", cache_dir)
+    await asyncio.to_thread(invalidate_cache_dir, cache_dir)

@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 from scene_detect.core.settings import settings as detect_settings
 from scene_detect.schemas.jobs import DetectJobRequest
-from scene_detect.utils import resolve_video_path as resolve_detect_video_path
+from scene_detect.utils import coalesce, resolve_video_path
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.jobs import (
@@ -38,14 +38,10 @@ async def submit_detect_job(
     req: DetectJobRequest,
 ) -> ResponseDTO[JobSubmitResponse]:
     """提交 scene-detect 异步任务。"""
-    video_path = resolve_detect_video_path(req.video_path, detect_settings.data_base_path)
+    video_path = resolve_video_path(req.video_path, detect_settings.data_base_path)
     if not Path(video_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
-    threshold = (
-        req.threshold if req.threshold is not None else detect_settings.video_scene_threshold
-    )
-    max_scenes = req.max_scenes if req.max_scenes is not None else detect_settings.video_max_scenes
     video_hash = compute_video_hash(video_path)
 
     existing = get_pending_job_by_video_hash("scene_detect", video_hash)
@@ -55,7 +51,12 @@ async def submit_detect_job(
 
     from scene_detect.services.tasks import run_detect_scenes
 
-    task_kwargs = {"threshold": threshold, "max_scenes": max_scenes}
+    task_kwargs = {
+        "threshold": req.threshold,
+        "max_scenes": req.max_scenes,
+        "scale_width": coalesce(req.scale_width, detect_settings.video_detect_scale_width),
+        "decode_threads": coalesce(req.decode_threads, detect_settings.video_decode_threads),
+    }
     request_data = {"video_path": video_path, "video_hash": video_hash, **task_kwargs}
     job_id = enqueue_job(
         "scene_detect",

@@ -25,7 +25,7 @@ class JobStatusResponse(BaseModel):
     """查询任务状态的响应（两服务共用）。
 
     result 为 dict | None，具体结构由 job_type 决定：
-      - scene_detect: {"scenes": [...]}
+      - scene_detect: {"metadata": {...}, "policy": {...}, "scenes": [...], "warnings": [...]}
       - structure:     StructureResultDTO 的完整 dict
     """
 
