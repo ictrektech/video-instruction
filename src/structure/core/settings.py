@@ -21,6 +21,10 @@ class Settings(BaseSettings):
         "scenes",
         description="场景缓存持久化子目录名，相对于 data_base_path",
     )
+    video_json_cache_enabled: bool = Field(
+        False,
+        description="是否启用结构化和描述 JSON 缓存文件",
+    )
 
     # ── 大模型描述 ────────────────────────────────────────────
     llm_base_url: str = Field("http://localhost:13454/v1", description="LLM API 地址")

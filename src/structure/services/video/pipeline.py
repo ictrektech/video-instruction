@@ -67,7 +67,7 @@ async def structure(
     # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
     video_hash = await asyncio.to_thread(compute_video_hash, video_path)
     cache_dir = get_cache_path(video_hash, settings)
-    if not cmd.force and cache_dir.is_dir():
+    if settings.video_json_cache_enabled and not cmd.force and cache_dir.is_dir():
         cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.data_base_path)
         if cached is not None:
             cached.elapsed_sec = round(time.time() - started_at, 2)
@@ -132,11 +132,12 @@ async def structure(
         elapsed_sec=elapsed_sec,
     )
 
-    # ── Step 4: 写入缓存（fire-and-forget）───────────────────────────
-    try:
-        await asyncio.to_thread(save_cached_result, cache_dir, result)
-    except Exception as exc:
-        logger.warning("缓存写入失败: %s", exc)
+    # ── Step 4: 按配置写入 JSON 缓存（fire-and-forget）───────────────
+    if settings.video_json_cache_enabled:
+        try:
+            await asyncio.to_thread(save_cached_result, cache_dir, result)
+        except Exception as exc:
+            logger.warning("缓存写入失败: %s", exc)
 
     return result
 
