@@ -195,6 +195,7 @@ class TestStructureCachePolicy:
                 video_path="demo.mp4",
                 scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
                 force=False,
+                cache_enabled=True,
                 frame_grid=False,
             ),
             str(video),
@@ -237,6 +238,7 @@ class TestStructureCachePolicy:
                     _boundary(1, 25, 49, 1.0, 2.0),
                 ],
                 force=False,
+                cache_enabled=True,
                 frame_grid=False,
             ),
             str(video),
@@ -269,6 +271,7 @@ class TestStructureCachePolicy:
                 video_path="demo.mp4",
                 scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
                 force=True,
+                cache_enabled=True,
                 frame_grid=False,
             ),
             str(video),
@@ -278,7 +281,7 @@ class TestStructureCachePolicy:
         assert not cache_dir.exists()
 
     @pytest.mark.asyncio
-    async def test_cache_disabled_skips_read_invalidate_and_save(
+    async def test_cache_disabled_by_default_skips_read_invalidate_and_save(
         self, monkeypatch, tmp_path: Path
     ):
         cached_result = StructureResultDTO(
@@ -301,7 +304,6 @@ class TestStructureCachePolicy:
             StructureCommand(
                 video_path="demo.mp4",
                 scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
-                cache_enabled=False,
                 frame_grid=False,
             ),
             str(video),

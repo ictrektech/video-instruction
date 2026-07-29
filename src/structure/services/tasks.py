@@ -44,7 +44,7 @@ def run_structure(
     detect_job_id: str | None = None,
     frame_grid: bool = True,
     force: bool = False,
-    cache_enabled: bool = True,
+    cache_enabled: bool = False,
     grid_rows: int = 3,
     grid_cols: int = 3,
     task=None,  # injected by context=True
