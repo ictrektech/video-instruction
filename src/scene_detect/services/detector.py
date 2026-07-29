@@ -395,7 +395,7 @@ class FfmpegVideoStream(VideoStream):
     """PySceneDetect 兼容的 VideoStream（ffmpeg 管道）。
 
     - ``scale_width > 0``: 管道内 scale，降低检测像素量
-    - ``decode_threads``: ffmpeg ``-threads``（1 保守，2~4 更快，0=auto）
+    - ``decode_threads``: ffmpeg ``-threads``（0=auto，1 保守，2~4 更快）
     """
 
     BACKEND_NAME = "ffmpeg_pipe"
@@ -409,7 +409,7 @@ class FfmpegVideoStream(VideoStream):
         total_frames: int,
         *,
         scale_width: int = 0,
-        decode_threads: int = 1,
+        decode_threads: int = 0,
     ):
         self._fps = fps
         self._total_frames = total_frames

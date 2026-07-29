@@ -261,7 +261,7 @@ def _extract_frames(
             "-loglevel",
             "error",
             "-threads",
-            str(max(1, ffmpeg_threads)),
+            str(max(0, ffmpeg_threads)),
             "-ss",
             f"{start_time:.3f}",
             "-i",

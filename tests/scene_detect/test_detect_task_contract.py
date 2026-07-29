@@ -58,7 +58,7 @@ class TestDetectTaskContract:
             threshold=27.0,
             max_scenes=80,
             scale_width=640,
-            decode_threads=2,
+            decode_threads=0,
         )
 
         assert scenes == [

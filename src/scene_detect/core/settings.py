@@ -23,8 +23,8 @@ class Settings(BaseSettings):
         description="检测管道 scale 宽度，0=不缩放；推荐 640",
     )
     video_decode_threads: int = Field(
-        2,
-        description="ffmpeg -threads；1=保守，2~4=更快，0=auto",
+        0,
+        description="ffmpeg -threads；0=auto，1=保守，2~4=更快",
     )
 
     model_config = SettingsConfigDict(
