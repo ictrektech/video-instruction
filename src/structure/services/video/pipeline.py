@@ -60,86 +60,90 @@ async def structure(
     Path(work_dir).mkdir(parents=True, exist_ok=True)
     call_work_dir = Path(tempfile.mkdtemp(dir=work_dir))
 
-    started_at = time.time()
-    stage_timings: dict[str, float] = {}
-    warnings: list[WarningDTO] = []
+    try:
+        started_at = time.time()
+        stage_timings: dict[str, float] = {}
+        warnings: list[WarningDTO] = []
 
-    # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
-    video_hash = await asyncio.to_thread(compute_video_hash, video_path)
-    cache_dir = get_cache_path(video_hash, settings)
-    if settings.video_json_cache_enabled and not cmd.force and cache_dir.is_dir():
-        cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.data_base_path)
-        if cached is not None:
-            cached.elapsed_sec = round(time.time() - started_at, 2)
-            cached.stage_timings["total"] = cached.elapsed_sec
-            logger.info("缓存命中: %s", video_path)
-            return cached
-        logger.info("缓存目录存在但无效，重新处理: %s", cache_dir)
+        # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
+        video_hash = await asyncio.to_thread(compute_video_hash, video_path)
+        cache_dir = get_cache_path(video_hash, settings)
+        if settings.video_json_cache_enabled and not cmd.force and cache_dir.is_dir():
+            cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.data_base_path)
+            if cached is not None:
+                cached.elapsed_sec = round(time.time() - started_at, 2)
+                cached.stage_timings["total"] = cached.elapsed_sec
+                logger.info("缓存命中: %s", video_path)
+                return cached
+            logger.info("缓存目录存在但无效，重新处理: %s", cache_dir)
 
-    # ── Step 1: 提取元数据 ──────────────────────────────────────────
-    t0 = time.time()
-    metadata = await asyncio.to_thread(extract_metadata, video_path)
-    stage_timings["metadata"] = round(time.time() - t0, 3)
-
-    # ── Step 2: 场景边界（从 API 传入）────────────────────────────────
-    scene_bounds: list[tuple[int, int, float, float]] = [
-        (s.start_frame, s.end_frame, s.start_time, s.end_time) for s in cmd.scenes
-    ]
-    logger.info("使用 API 传入的场景边界: %d 个场景", len(scene_bounds))
-
-    # ── Step 3: 九宫格生成 ──────────────────────────────────────────
-    scenes: list[SceneDTO] = []
-    if cmd.frame_grid and scene_bounds:
+        # ── Step 1: 提取元数据 ──────────────────────────────────────────
         t0 = time.time()
-        grid_results = await asyncio.to_thread(
-            extract_scene_grids,
-            video_path,
-            scene_bounds,
-            metadata,
-            call_work_dir,
-            settings.video_grid_tile_max_height,
-            cmd.grid_rows,
-            cmd.grid_cols,
-            cache_dir,
+        metadata = await asyncio.to_thread(extract_metadata, video_path)
+        stage_timings["metadata"] = round(time.time() - t0, 3)
+
+        # ── Step 2: 场景边界（从 API 传入）────────────────────────────────
+        scene_bounds: list[tuple[int, int, float, float]] = [
+            (s.start_frame, s.end_frame, s.start_time, s.end_time) for s in cmd.scenes
+        ]
+        logger.info("使用 API 传入的场景边界: %d 个场景", len(scene_bounds))
+
+        # ── Step 3: 九宫格生成 ──────────────────────────────────────────
+        scenes: list[SceneDTO] = []
+        if cmd.frame_grid and scene_bounds:
+            t0 = time.time()
+            grid_results = await asyncio.to_thread(
+                extract_scene_grids,
+                video_path,
+                scene_bounds,
+                metadata,
+                call_work_dir,
+                settings.video_grid_tile_max_height,
+                cmd.grid_rows,
+                cmd.grid_cols,
+                cache_dir,
+                settings.video_ffmpeg_timeout,
+            )
+            for grid_item, _warnings in grid_results:
+                scenes.append(grid_item)
+                warnings.extend(_warnings)
+            stage_timings["frame_grid"] = round(time.time() - t0, 3)
+        elif scene_bounds:
+            scenes = scene_bounds_to_dtos(scene_bounds)
+
+        elapsed_sec = round(time.time() - started_at, 2)
+        stage_timings["total"] = elapsed_sec
+
+        result = StructureResultDTO(
+            video_hash=video_hash,
+            metadata=VideoMetadataSchema(
+                video_path=cmd.video_path,
+                fps=metadata["fps"],
+                duration=metadata["duration"],
+                width=metadata["width"],
+                height=metadata["height"],
+                codec=metadata["codec"],
+                bitrate=metadata["bitrate"],
+                has_audio=metadata["has_audio"],
+                total_frames=metadata["total_frames"],
+            ),
+            grid_base_path=f"{settings.video_scenes_dir}/{video_hash}/grids/",
+            scenes=scenes,
+            warnings=warnings,
+            stage_timings=stage_timings,
+            elapsed_sec=elapsed_sec,
         )
-        for grid_item, _warnings in grid_results:
-            scenes.append(grid_item)
-            warnings.extend(_warnings)
-        stage_timings["frame_grid"] = round(time.time() - t0, 3)
-    elif scene_bounds:
-        scenes = scene_bounds_to_dtos(scene_bounds)
 
-    elapsed_sec = round(time.time() - started_at, 2)
-    stage_timings["total"] = elapsed_sec
+        # ── Step 4: 按配置写入 JSON 缓存（fire-and-forget）───────────────
+        if settings.video_json_cache_enabled:
+            try:
+                await asyncio.to_thread(save_cached_result, cache_dir, result)
+            except Exception as exc:
+                logger.warning("缓存写入失败: %s", exc)
 
-    result = StructureResultDTO(
-        video_hash=video_hash,
-        metadata=VideoMetadataSchema(
-            video_path=cmd.video_path,
-            fps=metadata["fps"],
-            duration=metadata["duration"],
-            width=metadata["width"],
-            height=metadata["height"],
-            codec=metadata["codec"],
-            bitrate=metadata["bitrate"],
-            has_audio=metadata["has_audio"],
-            total_frames=metadata["total_frames"],
-        ),
-        grid_base_path=f"{settings.video_scenes_dir}/{video_hash}/grids/",
-        scenes=scenes,
-        warnings=warnings,
-        stage_timings=stage_timings,
-        elapsed_sec=elapsed_sec,
-    )
-
-    # ── Step 4: 按配置写入 JSON 缓存（fire-and-forget）───────────────
-    if settings.video_json_cache_enabled:
-        try:
-            await asyncio.to_thread(save_cached_result, cache_dir, result)
-        except Exception as exc:
-            logger.warning("缓存写入失败: %s", exc)
-
-    return result
+        return result
+    finally:
+        await asyncio.to_thread(shutil.rmtree, call_work_dir, ignore_errors=True)
 
 
 async def clear_cache(video_path: str) -> None:

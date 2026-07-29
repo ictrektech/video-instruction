@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import select
 import shutil
 import subprocess
 from fractions import Fraction
@@ -12,6 +13,7 @@ from scenedetect import ContentDetector, SceneManager
 from scenedetect.frame_timecode import FrameTimecode
 from scenedetect.video_stream import VideoStream
 
+from scene_detect.core.settings import settings
 from scene_detect.schemas.scene import SceneBoundary, SceneMetadata, WarningDTO
 
 logger = getLogger(__name__)
@@ -44,7 +46,14 @@ def detect_scenes(
     # Step 2: 场景检测
     fs: FfmpegVideoStream | None = None
     try:
-        fs = FfmpegVideoStream(video_path, width, height, fps, total_frames)
+        fs = FfmpegVideoStream(
+            video_path,
+            width,
+            height,
+            fps,
+            total_frames,
+            settings.video_pipe_read_timeout,
+        )
         scene_manager = SceneManager()
         scene_manager.add_detector(ContentDetector(threshold=threshold))
         scene_manager.detect_scenes(video=fs)
@@ -151,12 +160,14 @@ class FfmpegVideoStream(VideoStream):
         height: int,
         fps: float,
         total_frames: int,
+        read_timeout: int,
     ):
         self._width = width
         self._height = height
         self._fps = fps
         self._total_frames = total_frames
         self._frame_number = 0
+        self._read_timeout = read_timeout
 
         if self._width <= 0 or self._height <= 0:
             raise ValueError(f"无效视频尺寸: {self._width}x{self._height}")
@@ -221,7 +232,7 @@ class FfmpegVideoStream(VideoStream):
     def read(self, decode: bool = True):
         if self._r_fd < 0:
             return False
-        raw = _read_exact(self._r_fd, self._frame_bytes)
+        raw = _read_exact(self._r_fd, self._frame_bytes, self._read_timeout)
         if not raw:
             self.close()
             return False
@@ -285,11 +296,14 @@ class FfmpegVideoStream(VideoStream):
         self._proc = None
 
 
-def _read_exact(fd: int, count: int) -> bytes | None:
+def _read_exact(fd: int, count: int, timeout: int) -> bytes | None:
     chunks: list[bytes] = []
     remaining = count
     while remaining > 0:
         try:
+            readable, _, _ = select.select([fd], [], [], timeout)
+            if not readable:
+                raise TimeoutError(f"ffmpeg 管道读帧超时({timeout}s)")
             chunk = os.read(fd, remaining)
         except OSError:
             return None

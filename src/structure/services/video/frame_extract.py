@@ -25,6 +25,7 @@ def extract_scene_grids(
     grid_rows: int = 3,
     grid_cols: int = 3,
     cache_dir: Path | None = None,
+    ffmpeg_timeout: int = 60,
 ) -> list[tuple[SceneDTO, list[WarningDTO]]]:
     """为每个场景采样帧并拼接为 rows x cols 网格图。
 
@@ -55,6 +56,7 @@ def extract_scene_grids(
                 tile_max_height,
                 grid_cols,
                 grid_rows,
+                ffmpeg_timeout,
             )
 
             # 若指定了缓存目录，将 grid 图片持久化到缓存路径
@@ -151,6 +153,7 @@ def _build_grid(
     tile_max_height: int,
     cols: int = 3,
     rows: int = 3,
+    ffmpeg_timeout: int = 60,
 ) -> None:
     """用 ffmpeg 取帧，PIL 拼成 ``rows`` x ``cols`` 网格图保存为 JPEG。
 
@@ -171,7 +174,7 @@ def _build_grid(
 
     with tempfile.TemporaryDirectory(prefix="grid_") as tmp:
         tmp_dir = Path(tmp)
-        frame_paths = _extract_frames(video_path, frame_indices, tmp_dir, "f", fps)
+        frame_paths = _extract_frames(video_path, frame_indices, tmp_dir, "f", fps, ffmpeg_timeout)
 
         if not frame_paths:
             blank = Image.new("RGB", (960, 720), (0, 0, 0))
@@ -211,6 +214,7 @@ def _extract_frames(
     out_dir: Path,
     prefix: str,
     fps_val: float,
+    timeout: int,
 ) -> list[Path]:
     """用 ffmpeg 快速 seek + 时间范围截取提取指定帧。
 
@@ -244,32 +248,42 @@ def _extract_frames(
 
     output_pattern = out_dir / f"{prefix}_%03d.jpg"
 
-    subprocess.run(  # noqa: S603
-        [
-            shutil.which("ffmpeg") or "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            f"{start_time:.3f}",
-            "-i",
-            video_path,
-            "-to",
-            f"{end_time:.3f}",
-            "-vf",
-            f"fps={target_fps:.6f}",
-            "-frames:v",
-            str(count),
-            "-q:v",
-            "5",
-            "-an",
-            str(output_pattern),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                shutil.which("ffmpeg") or "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-threads",
+                "1",
+                "-ss",
+                f"{start_time:.3f}",
+                "-i",
+                video_path,
+                "-to",
+                f"{end_time:.3f}",
+                "-vf",
+                f"fps={target_fps:.6f}",
+                "-frames:v",
+                str(count),
+                "-q:v",
+                "5",
+                "-an",
+                str(output_pattern),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"ffmpeg 取帧超时({timeout}s)") from exc
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(f"ffmpeg 取帧失败(returncode={result.returncode}): {stderr}")
 
     extracted = sorted(out_dir.glob(f"{prefix}_*.jpg"))
     # fps 过滤器输出已按时间均匀分布，直接补齐到 count 个

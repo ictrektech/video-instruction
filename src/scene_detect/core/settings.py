@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     data_base_path: str = Field("/data/video-structured", description="视频文件基础路径前缀")
     video_scene_threshold: float = Field(27.0, description="场景检测阈值（越大越不敏感）")
     video_max_scenes: int = Field(200, description="最大场景数限制")
+    video_pipe_read_timeout: int = Field(30, description="ffmpeg 管道单次读帧超时秒数")
 
     model_config = SettingsConfigDict(
         env_file=("src/scene_detect/.env", ".env"),
