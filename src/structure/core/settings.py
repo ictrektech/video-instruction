@@ -14,13 +14,17 @@ class Settings(BaseSettings):
     log_config_path: str = Field("config/log_conf.yaml", description="日志配置路径")
     cors_origins: str = Field("*", description="CORS 允许的源，多个用逗号分隔")
 
-    data_base_path: str = Field("/data/video-structured", description="视频文件基础路径前缀")
+    data_base_path: str = Field("/data", description="视频文件基础路径前缀（相对路径模式）")
+    cache_base_path: str = Field(
+        "/data/video-structure-cache", description="结构化输出缓存根目录（与输入解耦）"
+    )
     video_work_dir: str = Field("/tmp/video-structured", description="视频处理临时工作目录")  # noqa: S108
     video_grid_tile_max_height: int = Field(360, description="九宫格单 tile 最大高度(像素)")
     video_ffmpeg_timeout: int = Field(60, description="单次 ffmpeg 取帧超时秒数")
+    video_grid_ffmpeg_threads: int = Field(2, description="九宫格取帧 ffmpeg 线程数")
     video_scenes_dir: str = Field(
         "scenes",
-        description="场景缓存持久化子目录名，相对于 data_base_path",
+        description="场景缓存持久化子目录名，相对于 cache_base_path",
     )
     video_json_cache_enabled: bool = Field(
         False,

@@ -1,5 +1,7 @@
 name: video-instruction-test
 
+
+
 services:
   scene-detection:
     build:
@@ -9,16 +11,29 @@ services:
         SERVICE: scene-detect
     image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-detection:${IMAGE_TAG:-latest}
     container_name: test-video-detection
-    command: uv run scene-detect
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
+        exec uv run scene-detect
     ports:
       - "${SCENE_DETECTION_PORT:-8910}:8910"
     environment:
       APP_ENV: prod
       APP_PORT: 8910
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
+      # 场景检测管道：scale=640 切点稳定；threads=2 兼顾多 worker
+      VIDEO_DETECT_SCALE_WIDTH: "640"
+      VIDEO_DECODE_THREADS: "2"
     volumes:
       - ../log:/app/log
-      - immich-photos:/data
+      - immich-photos:/photos
+      - ../data:/app/data
+      # worker 也可能处理 structure 任务，需要可写的缓存目录
+      - /data/video-structure-cache:/data/video-structure-cache
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -31,24 +46,33 @@ services:
         SERVICE: structure
     image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-structure:${IMAGE_TAG:-latest}
     container_name: test-video-structure
-    command: uv run structure
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        uv run structure-worker --workers ${HUEY_WORKERS:-2} &
+        exec uv run structure
     ports:
       - "${STRUCTURE_PORT:-8911}:8911"
     environment:
       APP_ENV: prod
       APP_PORT: 8911
-      DATA_BASE_PATH: /data
+      DATA_BASE_PATH: /photos
+      CACHE_BASE_PATH: /data/video-structure-cache
+      VIDEO_GRID_FFMPEG_THREADS: "2"
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
       LLM_MODEL_NAME: minicpm-v:latest
       LLM_MAX_CONCURRENCY: 20
     volumes:
       - ../log:/app/log
-      - immich-photos:/data
+      - immich-photos:/photos
+      - ../data:/app/data
+      - /data/video-structure-cache:/data/video-structure-cache
     networks:
       - video-instruction-net
     restart: unless-stopped
-
 volumes:
   immich-photos:
     name: dev-immich-photos

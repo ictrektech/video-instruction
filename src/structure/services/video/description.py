@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import tempfile
 import time
 from asyncio import Semaphore, gather
@@ -19,7 +18,7 @@ from structure.schemas.description import (
     SceneDescriptionResult,
 )
 from structure.schemas.model_config import ModelConfig
-from structure.schemas.video import WarningDTO
+from structure.schemas.video import SceneDTO, WarningDTO
 from structure.services.llm.client import LLMClient, LLMRequestError
 from structure.services.video.cache import get_cache_path, load_cached_result
 
@@ -58,20 +57,14 @@ def _save_descriptions(cache_dir: Path, result: SceneDescriptionResult) -> None:
         raise
 
 
-def _scene_grids_from_dir(cache_dir: Path) -> list[tuple[int, str]]:
-    """从持久化的 grid 图片目录恢复可描述的场景列表。"""
-    grids_dir = cache_dir / "grids"
-    if not grids_dir.is_dir():
-        return []
-
-    scene_grids: list[tuple[int, str]] = []
-    for image_path in grids_dir.glob("scene_*.jpg"):
-        match = re.fullmatch(r"scene_(\d+)\.jpg", image_path.name)
-        if match is None:
-            continue
-        scene_grids.append((int(match.group(1)) - 1, image_path.name))
-
-    return sorted(scene_grids, key=lambda item: item[0])
+def _descriptions_match_scenes(
+    descriptions: SceneDescriptionResult,
+    scenes: list[SceneDTO],
+) -> bool:
+    """描述缓存是否与当前 structure scenes 的 index 集合一致。"""
+    return {item.scene_index for item in descriptions.descriptions} == {
+        scene.scene_index for scene in scenes
+    }
 
 
 async def describe_scenes(
@@ -84,7 +77,7 @@ async def describe_scenes(
 
     流程：
     1. 查找场景缓存，确认视频已结构化
-    2. 如果启用 JSON 缓存且已有描述缓存且非 force，直接返回
+    2. 如果已有描述缓存且与当前 scenes 对齐、非 force，直接返回
     3. 并发对各场景图片调用 LLM
     4. 保存描述缓存并返回
 
@@ -102,33 +95,27 @@ async def describe_scenes(
     """
     cache_dir = get_cache_path(video_hash, settings)
 
-    # 1. 查找场景缓存；未启用 JSON 缓存时从 grid 图片目录恢复场景列表
-    cached_result = load_cached_result(cache_dir, settings.data_base_path)
-    if cached_result is not None:
-        scene_grids = [
-            (scene.scene_index, scene.grid_image)
-            for scene in cached_result.scenes
-            if scene.grid_image is not None
-        ]
-    else:
-        scene_grids = _scene_grids_from_dir(cache_dir)
-
-    if not scene_grids:
+    # 1. 查找场景缓存
+    cached_result = load_cached_result(cache_dir, settings.cache_base_path)
+    if cached_result is None:
         raise ApiException(BusinessErrorCode.VIDEO_SCENE_CACHE_MISS)
 
-    # 2. 检查描述缓存
-    if settings.video_json_cache_enabled and not force:
+    # 2. 检查描述缓存（需与当前 structure scenes 对齐）
+    scenes = cached_result.scenes
+    if not force:
         cached_descriptions = _load_cached_descriptions(cache_dir)
-        if cached_descriptions is not None:
-            logger.info(
-                "视频 %s 场景描述缓存命中: %s",
-                video_hash,
-                _descriptions_cache_path(cache_dir),
-            )
+        if cached_descriptions is not None and _descriptions_match_scenes(
+            cached_descriptions, scenes
+        ):
             return cached_descriptions
 
     # 3. 构造图片路径 & 并发描述
     grids_dir = cache_dir / "grids"
+    scene_grids = [
+        (scene.scene_index, scene.grid_image)
+        for scene in scenes
+        if scene.grid_image is not None
+    ]
 
     if model_cfg is None:
         raise ApiException(BusinessErrorCode.COMMON_INVALID_ARGUMENT, "缺少大模型配置")
@@ -206,9 +193,8 @@ async def describe_scenes(
         warnings=warnings,
     )
 
-    # 5. 按配置保存描述 JSON 缓存
-    if settings.video_json_cache_enabled:
-        _save_descriptions(cache_dir, result)
+    # 5. 保存描述 JSON 缓存
+    _save_descriptions(cache_dir, result)
 
     logger.info(
         "场景描述完成: video_hash=%s, scenes=%d, elapsed=%.2fs",

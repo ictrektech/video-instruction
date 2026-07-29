@@ -72,7 +72,7 @@ class StructureResultDTO(BaseModel):
     metadata: VideoMetadataSchema = Field(description="视频元数据")
     grid_base_path: str = Field(
         default="",
-        description="九宫格图片基础路径(相对于 data_base_path)，与 scene.grid_image 拼接",
+        description="九宫格图片基础路径(相对于 cache_base_path)，与 scene.grid_image 拼接",
     )
     scenes: list[SceneDTO] = Field(description="场景列表")
     warnings: list[WarningDTO] = Field(default_factory=list, description="警告信息")

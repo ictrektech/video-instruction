@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import shutil
 import tempfile
+from collections.abc import Sequence
 from logging import getLogger
 from pathlib import Path
+from typing import Any
 
 from structure.core.settings import Settings
 from structure.schemas.video import SceneDTO, StructureResultDTO, VideoMetadataSchema, WarningDTO
@@ -14,52 +14,13 @@ from structure.schemas.video import SceneDTO, StructureResultDTO, VideoMetadataS
 logger = getLogger(__name__)
 
 
-def compute_video_hash(video_path: str) -> str:
-    """
-    极速采样哈希：3点×16KB
-    适合边缘 NAS、树莓派等低性能设备
-    Args:
-        video_path: 视频文件路径
-    Returns:
-        32位十六进制 MD5 哈希值
-    """
-    file_size = os.path.getsize(video_path)
-
-    # 小文件直接计算完整哈希
-    if file_size < 1024 * 1024:  # < 1MB
-        return hashlib.md5(open(video_path, "rb").read()).hexdigest()  # noqa: S324
-
-    # 初始化 MD5
-    md5 = hashlib.md5()  # noqa: S324
-
-    # 加入文件大小作为种子（增加区分度）
-    md5.update(str(file_size).encode())
-
-    # 采样位置：开头、中间、结尾
-    positions = [
-        0,  # 开头
-        file_size // 2,  # 中间
-        max(0, file_size - 16 * 1024),  # 结尾（避免越界）
-    ]
-
-    with open(video_path, "rb") as f:
-        for pos in positions:
-            # 定位到采样点
-            f.seek(pos)
-            # 读取 16KB
-            data = f.read(16 * 1024)
-            md5.update(data)
-
-    return md5.hexdigest()
-
-
 def _scenes_cache_root(settings: Settings) -> Path:
     """返回 scenes 缓存的根目录。"""
-    return Path(settings.data_base_path) / settings.video_scenes_dir
+    return Path(settings.cache_base_path) / settings.video_scenes_dir
 
 
 def get_cache_path(video_hash: str, settings: Settings) -> Path:
-    """返回 `<data_base_path>/scenes/<hash>/` 目录。"""
+    """返回 `<cache_base_path>/scenes/<hash>/` 目录。"""
     return _scenes_cache_root(settings) / video_hash
 
 
@@ -155,7 +116,7 @@ def _scene_from_cached_dict(data: dict) -> SceneDTO:
 
 def load_cached_result(
     cache_dir: Path,
-    data_base_path: str | Path | None = None,
+    cache_base_path: str | Path | None = None,
 ) -> StructureResultDTO | None:
     """从缓存目录加载完整结果。"""
     json_path = _cached_json_path(cache_dir)
@@ -184,8 +145,8 @@ def load_cached_result(
     scenes: list[SceneDTO] = []
     for scene_data in cached.scenes:
         grid_image = scene_data.get("grid_image")
-        if grid_image and data_base_path:
-            grid_abs = Path(data_base_path) / cached.grid_base_path / grid_image
+        if grid_image and cache_base_path:
+            grid_abs = Path(cache_base_path) / cached.grid_base_path / grid_image
             if not grid_abs.is_file():
                 logger.warning(
                     "场景 %d 的 grid 图片缺失，缓存失效", scene_data.get("scene_index", 0)
@@ -239,9 +200,33 @@ def save_cached_result(
     logger.info("缓存已保存: %s", cache_dir)
 
 
-def clear_cache(video_hash: str, settings: Settings) -> None:
-    """删除指定视频的缓存目录。"""
-    cache_dir = get_cache_path(video_hash, settings)
+def invalidate_cache_dir(cache_dir: Path) -> None:
+    """删除结构缓存目录（_cached.json / grids / _descriptions.json）。"""
     if cache_dir.is_dir():
         shutil.rmtree(cache_dir)
-        logger.info("缓存已清除: %s", cache_dir)
+        logger.info("结构缓存已清理: %s", cache_dir)
+
+
+def clear_cache(video_hash: str, settings: Settings) -> None:
+    """按 video_hash 删除对应缓存目录。"""
+    invalidate_cache_dir(get_cache_path(video_hash, settings))
+
+
+def scenes_match(request_scenes: Sequence[Any], cached_scenes: Sequence[Any]) -> bool:
+    """请求 scenes 与缓存 scenes 边界是否完全一致。
+
+    兼容请求侧 ``SceneBoundaryInput`` 与缓存侧 ``SceneDTO``。
+    """
+
+    def _key(scenes: Sequence[Any]) -> tuple[tuple[int, int, float, float], ...]:
+        return tuple(
+            (
+                int(scene.start_frame),
+                int(scene.end_frame),
+                round(float(scene.start_time), 6),
+                round(float(scene.end_time), 6),
+            )
+            for scene in scenes
+        )
+
+    return _key(request_scenes) == _key(cached_scenes)

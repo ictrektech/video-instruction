@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PIL import Image, ImageFile
 
+from structure.core.settings import settings
 from structure.schemas.video import SceneDTO, WarningDTO
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -174,7 +175,15 @@ def _build_grid(
 
     with tempfile.TemporaryDirectory(prefix="grid_") as tmp:
         tmp_dir = Path(tmp)
-        frame_paths = _extract_frames(video_path, frame_indices, tmp_dir, "f", fps, ffmpeg_timeout)
+        frame_paths = _extract_frames(
+            video_path,
+            frame_indices,
+            tmp_dir,
+            "f",
+            fps,
+            ffmpeg_threads=settings.video_grid_ffmpeg_threads,
+            timeout=ffmpeg_timeout,
+        )
 
         if not frame_paths:
             blank = Image.new("RGB", (960, 720), (0, 0, 0))
@@ -215,6 +224,7 @@ def _extract_frames(
     prefix: str,
     fps_val: float,
     timeout: int,
+    ffmpeg_threads: int = 2,
 ) -> list[Path]:
     """用 ffmpeg 快速 seek + 时间范围截取提取指定帧。
 
@@ -257,7 +267,7 @@ def _extract_frames(
                 "-loglevel",
                 "error",
                 "-threads",
-                "1",
+                str(max(1, ffmpeg_threads)),
                 "-ss",
                 f"{start_time:.3f}",
                 "-i",

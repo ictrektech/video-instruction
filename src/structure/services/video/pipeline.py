@@ -9,6 +9,7 @@ from pathlib import Path
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
+from shared.utils.video_hash import compute_video_hash
 from structure.core.settings import settings
 from structure.schemas.video import (
     SceneDTO,
@@ -18,10 +19,11 @@ from structure.schemas.video import (
     WarningDTO,
 )
 from structure.services.video.cache import (
-    compute_video_hash,
     get_cache_path,
+    invalidate_cache_dir,
     load_cached_result,
     save_cached_result,
+    scenes_match,
 )
 from structure.services.video.frame_extract import (
     extract_scene_grids,
@@ -68,14 +70,21 @@ async def structure(
         # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
         video_hash = await asyncio.to_thread(compute_video_hash, video_path)
         cache_dir = get_cache_path(video_hash, settings)
-        if settings.video_json_cache_enabled and not cmd.force and cache_dir.is_dir():
-            cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.data_base_path)
-            if cached is not None:
+        if not cmd.force and cache_dir.is_dir():
+            cached = await asyncio.to_thread(
+                load_cached_result,
+                cache_dir,
+                settings.cache_base_path,
+            )
+            if cached is not None and scenes_match(cmd.scenes, cached.scenes):
                 cached.elapsed_sec = round(time.time() - started_at, 2)
                 cached.stage_timings["total"] = cached.elapsed_sec
                 logger.info("缓存命中: %s", video_path)
                 return cached
-            logger.info("缓存目录存在但无效，重新处理: %s", cache_dir)
+            logger.info("缓存未命中，重新处理: %s", cache_dir)
+
+        # miss / force：清旧产物，避免残留 grid 与过期描述
+        await asyncio.to_thread(invalidate_cache_dir, cache_dir)
 
         # ── Step 1: 提取元数据 ──────────────────────────────────────────
         t0 = time.time()
@@ -134,12 +143,11 @@ async def structure(
             elapsed_sec=elapsed_sec,
         )
 
-        # ── Step 4: 按配置写入 JSON 缓存（fire-and-forget）───────────────
-        if settings.video_json_cache_enabled:
-            try:
-                await asyncio.to_thread(save_cached_result, cache_dir, result)
-            except Exception as exc:
-                logger.warning("缓存写入失败: %s", exc)
+        # ── Step 4: 写入缓存 ────────────────────────────────────────
+        try:
+            await asyncio.to_thread(save_cached_result, cache_dir, result)
+        except Exception as exc:
+            logger.warning("缓存写入失败: %s", exc)
 
         return result
     finally:
@@ -153,5 +161,4 @@ async def clear_cache(video_path: str) -> None:
     if not cache_dir.is_dir():
         logger.info("无缓存可清除: %s", video_hash)
         raise ApiException(BusinessErrorCode.VIDEO_CACHE_NOT_FOUND)
-    await asyncio.to_thread(shutil.rmtree, cache_dir)
-    logger.info("缓存已清除: %s", cache_dir)
+    await asyncio.to_thread(invalidate_cache_dir, cache_dir)

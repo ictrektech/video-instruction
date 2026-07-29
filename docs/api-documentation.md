@@ -72,6 +72,8 @@ Video-Instruction 是一个无状态的视频分析服务，提供场景检测�
 |---|---|---|
 | `GET` | `/api/health` | 健康检查 |
 | `POST` | `/api/v1/scenes/detect` | 视频场景边界检测 |
+| `POST` | `/api/v2/scenes/detect/jobs` | 提交场景检测异步任务 |
+| `GET` | `/api/v2/scenes/detect/jobs/{job_id}` | 查询场景检测任务状态 |
 
 #### 视频结构化服务 (8911)
 
@@ -82,6 +84,10 @@ Video-Instruction 是一个无状态的视频分析服务，提供场景检测�
 | `POST` | `/api/v1/video/describe` | 场景大模型描述 |
 | `DELETE` | `/api/v1/video/cache` | 清除视频缓存 |
 | `GET` | `/api/v1/video/storage` | 查询存储路径 |
+| `POST` | `/api/v2/video/structure/jobs` | 提交视频结构化异步任务 |
+| `GET` | `/api/v2/video/structure/jobs/{job_id}` | 查询视频结构化任务状态 |
+| `POST` | `/api/v2/video/describe/jobs` | 提交场景描述异步任务 |
+| `GET` | `/api/v2/video/describe/jobs/{job_id}` | 查询场景描述任务状态 |
 
 ---
 
@@ -209,8 +215,10 @@ FfmpegVideoStream (单线程 ffmpeg rawvideo 管道)
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `video_path` | `string` | **必填** | 视频文件路径。相对于 `data_base_path`（默认 `/data/video-structured`），也支持绝对路径 |
-| `threshold` | `float \| null` | 可选 | 场景切换检测阈值，越大越不敏感。默认使用服务端配置（`27.0`） |
-| `max_scenes` | `int \| null` | 可选 | 最大场景数限制，超出时截断。默认使用服务端配置（`200`） |
+| `threshold` | `float \| null` | 可选 | 场景切换检测阈值，越大越不敏感。未传时按视频时长策略自动选择 |
+| `max_scenes` | `int \| null` | 可选 | 最大场景数限制，超出时压缩。未传时按视频时长策略自动选择 |
+| `scale_width` | `int \| null` | 可选 | 检测管道缩放宽度，默认使用服务端配置（`640`），`0` 表示不缩放 |
+| `decode_threads` | `int \| null` | 可选 | ffmpeg 解码线程数，默认使用服务端配置（`2`），`0` 表示 ffmpeg auto |
 
 #### 请求示例
 
@@ -237,6 +245,10 @@ Content-Type: application/json
 | `data.metadata.duration` | `float` | 视频时长（秒） |
 | `data.metadata.width` | `int` | 视频宽度（像素） |
 | `data.metadata.height` | `int` | 视频高度（像素） |
+| `data.policy` | `object` | 本次检测实际生效的策略参数 |
+| `data.policy.threshold` | `float` | 实际使用的场景检测阈值 |
+| `data.policy.min_scene_len_sec` | `float` | 短场景合并阈值（秒） |
+| `data.policy.max_scene_count` | `int` | 实际使用的最大场景数 |
 | `data.scenes` | `SceneBoundary[]` | 场景边界数组 |
 | `data.scenes[].scene_index` | `int` | 场景序号（从 0 开始） |
 | `data.scenes[].start_frame` | `int` | 起始帧索引 |
@@ -581,7 +593,7 @@ Content-Type: application/json
 Step 1: 通过 video_hash 定位缓存，确认视频已结构化
 Step 2: 检查描述缓存 (_descriptions.json)，命中则直接返回（force=false 时）
 Step 3: 并发对每场景缩略图调用 LLM (asyncio.Semaphore 控制并发数)
-Step 4: 启用 JSON 缓存时保存描述结果，按 scene_index 排序后返回
+Step 4: 保存描述结果，按 scene_index 排序后返回
 ```
 
 > **容错机制：** 缩略图不存在或单场景 LLM 调用失败时标记为 `failed`，不会阻塞其他场景。
@@ -758,7 +770,8 @@ GET /api/v1/video/storage
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `data.data_base_path` | `string` | 视频数据基础路径（绝对路径） |
-| `data.scenes_path` | `string` | 场景缓存根目录（绝对路径，=`data_base_path/scenes`） |
+| `data.cache_base_path` | `string` | 结构化输出缓存根目录（绝对路径） |
+| `data.scenes_path` | `string` | 场景缓存根目录（绝对路径，=`cache_base_path/scenes`） |
 
 #### 响应示例
 
@@ -768,7 +781,8 @@ GET /api/v1/video/storage
   "msg": "操作成功",
   "data": {
     "data_base_path": "/data",
-    "scenes_path": "/data/scenes"
+    "cache_base_path": "/data/video-structure-cache",
+    "scenes_path": "/data/video-structure-cache/scenes"
   }
 }
 ```
@@ -808,7 +822,7 @@ GET /api/v1/video/storage
 
 - **步骤 1（场景检测）不缓存** — 每次请求都重新检测
 - **步骤 2（结构化）有缓存** — 基于视频内容哈希（MD5 快速采样），同一视频的不同路径请求会命中缓存。传 `force=true` 可跳过缓存
-- **步骤 3（描述）有独立缓存** — 启用 JSON 缓存时，描述结果存储在 `_descriptions.json` 中，传 `force=true` 可强制重新生成
+- **步骤 3（描述）有独立缓存** — 描述结果存储在 `_descriptions.json` 中，传 `force=true` 可强制重新生成
 - **场景缩略图文件持久化** — 保存在 `scenes/{video_hash}/grids/scene_NNN.jpg`，与元数据缓存独立
 
 ### 缓存目录结构

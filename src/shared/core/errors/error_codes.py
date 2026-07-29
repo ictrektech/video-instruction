@@ -28,3 +28,4 @@ class BusinessErrorCode(ErrorCodeMixin):
     VIDEO_CACHE_NOT_FOUND = (70102, "视频缓存未找到")
     VIDEO_DESCRIPTION_LLM_ERROR = (70103, "大模型调用失败: {}")
     VIDEO_SCENE_CACHE_MISS = (70104, "视频场景缓存未找到，请先结构化")
+    JOB_NOT_FOUND = (70201, "任务不存在: {}")
