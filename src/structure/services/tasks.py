@@ -44,6 +44,7 @@ def run_structure(
     detect_job_id: str | None = None,
     frame_grid: bool = True,
     force: bool = False,
+    cache_enabled: bool = True,
     grid_rows: int = 3,
     grid_cols: int = 3,
     task=None,  # injected by context=True
@@ -57,6 +58,7 @@ def run_structure(
         detect_job_id: 引用的 scene-detect job ID（与 scenes 二选一）。
         frame_grid: 是否生成九宫格。
         force: 是否强制重新结构化。
+        cache_enabled: 是否启用结构化缓存读写。
         grid_rows: 九宫格行数。
         grid_cols: 九宫格列数。
         task: Huey Task 实例（由 context=True 注入）。
@@ -83,6 +85,7 @@ def run_structure(
             scenes=[SceneBoundaryInput(**s) for s in resolved_scenes],
             frame_grid=frame_grid,
             force=force,
+            cache_enabled=cache_enabled,
             grid_rows=grid_rows,
             grid_cols=grid_cols,
         )
@@ -93,12 +96,14 @@ def run_structure(
         result = asyncio.run(video_pipeline.structure(cmd, video_path))
 
         # 构建 result_ref
-        cache_dir_path = str(get_cache_path(result.video_hash, struct_settings))
-        ref_data = {
-            "video_hash": result.video_hash,
-            "cache_dir": cache_dir_path,
-            "cached_json": f"{cache_dir_path}/_cached.json",
-        }
+        ref_data = None
+        if cache_enabled:
+            cache_dir_path = str(get_cache_path(result.video_hash, struct_settings))
+            ref_data = {
+                "video_hash": result.video_hash,
+                "cache_dir": cache_dir_path,
+                "cached_json": f"{cache_dir_path}/_cached.json",
+            }
 
         finished_at = int(time.time())
         update_job(

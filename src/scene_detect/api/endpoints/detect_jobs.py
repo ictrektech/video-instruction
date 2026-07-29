@@ -44,7 +44,9 @@ async def submit_detect_job(
 
     video_hash = compute_video_hash(video_path)
 
-    existing = get_pending_job_by_video_hash("scene_detect", video_hash)
+    existing = (
+        get_pending_job_by_video_hash("scene_detect", video_hash) if req.cache_enabled else None
+    )
     if existing:
         logger.info("scene_detect job 已存在，复用: id=%s hash=%s", existing, video_hash)
         return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
@@ -57,14 +59,19 @@ async def submit_detect_job(
         "scale_width": coalesce(req.scale_width, detect_settings.video_detect_scale_width),
         "decode_threads": coalesce(req.decode_threads, detect_settings.video_decode_threads),
     }
-    request_data = {"video_path": video_path, "video_hash": video_hash, **task_kwargs}
+    request_data = {
+        "video_path": video_path,
+        "video_hash": video_hash,
+        "cache_enabled": req.cache_enabled,
+        **task_kwargs,
+    }
     job_id = enqueue_job(
         "scene_detect",
         request_data,
         run_detect_scenes.task_class,
         task_args=(video_path,),
         task_kwargs=task_kwargs,
-        video_hash=video_hash,
+        video_hash=video_hash if req.cache_enabled else None,
     )
 
     logger.info("提交 scene-detect job: id=%s hash=%s video=%s", job_id, video_hash, video_path)

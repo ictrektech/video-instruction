@@ -276,3 +276,40 @@ class TestStructureCachePolicy:
         assert len(result.scenes) == 1
         saved.assert_called_once()
         assert not cache_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_cache_disabled_skips_read_invalidate_and_save(
+        self, monkeypatch, tmp_path: Path
+    ):
+        cached_result = StructureResultDTO(
+            video_hash="hash123",
+            metadata=VideoMetadataSchema(video_path="demo.mp4"),
+            grid_base_path="scenes/hash123/grids/",
+            scenes=[_scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg")],
+        )
+        video, cache_dir = _patch_structure_env(monkeypatch, tmp_path, cached_result=cached_result)
+        (cache_dir / "_cached.json").write_text("{}", encoding="utf-8")
+
+        load = Mock(side_effect=AssertionError("cache disabled should not read"))
+        invalidate = Mock(side_effect=AssertionError("cache disabled should not invalidate"))
+        save = Mock(side_effect=AssertionError("cache disabled should not write"))
+        monkeypatch.setattr("structure.services.video.pipeline.load_cached_result", load)
+        monkeypatch.setattr("structure.services.video.pipeline.invalidate_cache_dir", invalidate)
+        monkeypatch.setattr("structure.services.video.pipeline.save_cached_result", save)
+
+        result = await structure(
+            StructureCommand(
+                video_path="demo.mp4",
+                scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
+                cache_enabled=False,
+                frame_grid=False,
+            ),
+            str(video),
+        )
+
+        assert len(result.scenes) == 1
+        assert result.grid_base_path == ""
+        assert cache_dir.exists()
+        load.assert_not_called()
+        invalidate.assert_not_called()
+        save.assert_not_called()

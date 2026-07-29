@@ -391,7 +391,7 @@ Content-Type: application/json
 
 **前置条件：** 必须先调用场景检测服务获取 `scenes` 列表。
 
-流程会先从缓存检查是否已处理过同一视频（基于内容哈希 MD5），命中则直接返回。对于每帧缩略图，使用单线程 ffmpeg 在场景时间范围内 seek 提取（避免全解码），然后通过 PIL 拼接为网格图。
+默认流程会先从缓存检查是否已处理过同一视频（基于内容哈希 MD5），命中则直接返回。对于每帧缩略图，使用单线程 ffmpeg 在场景时间范围内 seek 提取（避免全解码），然后通过 PIL 拼接为网格图。
 
 #### 执行流水线
 
@@ -402,6 +402,8 @@ Step 2: 接收场景边界（来自场景检测服务的 scenes 数组）
 Step 3: 每场景采样 grid_rows×grid_cols 帧 → ffmpeg 提取 → PIL 拼接 → 持久化到缓存
 Step 4: 缓存写入（失败仅记录日志）
 ```
+
+当 `cache_enabled=false` 时，流程仍会计算视频哈希，但不会读取、清理或写入结构化缓存；缩略图仅作为临时文件参与本次响应，不会持久化到 `scenes/{video_hash}/grids/`。
 
 #### 请求参数
 
@@ -418,6 +420,7 @@ Step 4: 缓存写入（失败仅记录日志）
 | `grid_rows` | `int` | 可选 | `1` | 每场景缩略图拼接行数。默认单帧；如需九宫格可设为 `3` |
 | `grid_cols` | `int` | 可选 | `1` | 每场景缩略图拼接列数。默认单帧；如需九宫格可设为 `3` |
 | `force` | `bool` | 可选 | `false` | 强制重新处理，忽略已有缓存 |
+| `cache_enabled` | `bool` | 可选 | `true` | 是否启用结构化缓存读写。`false` 时不读缓存、不清缓存、不写缓存 |
 
 > **采样策略：** 帧采样时跳过场景首尾各 5%（避免转场过渡帧），在中间 90% 区间内均匀采样。单帧模式取区间正中间位置。
 
@@ -488,6 +491,21 @@ Content-Type: application/json
   "frame_grid": false
 }
 ```
+
+**关闭结构化缓存：**
+
+```http
+POST /api/v1/video/structure HTTP/1.1
+Content-Type: application/json
+
+{
+  "video_path": "video/sample.mp4",
+  "scenes": [...],
+  "cache_enabled": false
+}
+```
+
+关闭缓存后，`data.grid_base_path` 返回空字符串；即使 `frame_grid=true`，生成的缩略图也不会写入持久化缓存目录。
 
 #### 响应参数
 
@@ -862,6 +880,7 @@ GET  /api/v2/scenes/detect/jobs/{job_id}
 | `max_scenes` | `int \| null` | 可选 | `null` | 最大场景数。`null` 时按视频时长策略自动选择，`0` 表示不限制 |
 | `scale_width` | `int \| null` | 可选 | `null` | 检测管道 scale 宽度。`null` 使用服务端配置，`0` 表示不缩放 |
 | `decode_threads` | `int \| null` | 可选 | `null` | ffmpeg 解码线程数。`null` 使用服务端配置，`0` 表示 ffmpeg auto |
+| `cache_enabled` | `bool` | 可选 | `true` | 是否复用相同视频未完成的 scene-detect job。`false` 时每次提交都会创建新任务 |
 
 提交示例：
 
@@ -871,7 +890,8 @@ GET  /api/v2/scenes/detect/jobs/{job_id}
   "threshold": 30.0,
   "max_scenes": 80,
   "scale_width": 640,
-  "decode_threads": 2
+  "decode_threads": 2,
+  "cache_enabled": true
 }
 ```
 
@@ -900,6 +920,7 @@ GET  /api/v2/video/structure/jobs/{job_id}
 | `detect_job_id` | `string \| null` | 条件必填 | `null` | 已成功的 scene-detect job ID。与 `scenes` 二选一 |
 | `frame_grid` | `bool` | 可选 | `true` | 是否生成场景拼图 |
 | `force` | `bool` | 可选 | `false` | 强制重新结构化，忽略已有缓存 |
+| `cache_enabled` | `bool` | 可选 | `true` | 是否启用结构化缓存读写和相同视频未完成任务复用。`false` 时 worker 不读写缓存，每次提交都会创建新任务 |
 | `grid_rows` | `int` | 可选 | `3` | 场景图片拼接行数。注意异步接口默认是 3 |
 | `grid_cols` | `int` | 可选 | `3` | 场景图片拼接列数。注意异步接口默认是 3 |
 
@@ -913,6 +934,7 @@ GET  /api/v2/video/structure/jobs/{job_id}
   "detect_job_id": "8c30a7f2-8263-471d-9c7b-4fc00d9f38dd",
   "frame_grid": true,
   "force": false,
+  "cache_enabled": true,
   "grid_rows": 3,
   "grid_cols": 3
 }
@@ -932,6 +954,7 @@ GET  /api/v2/video/structure/jobs/{job_id}
       "end_time": 15.02
     }
   ],
+  "cache_enabled": false,
   "grid_rows": 1,
   "grid_cols": 1
 }
@@ -1010,8 +1033,8 @@ GET  /api/v2/video/describe/jobs/{job_id}
 
 ### 缓存机制说明
 
-- **步骤 1（场景检测）不缓存** — 每次请求都重新检测
-- **步骤 2（结构化）有缓存** — 基于视频内容哈希（MD5 快速采样），同一视频的不同路径请求会命中缓存。传 `force=true` 可跳过缓存
+- **步骤 1（场景检测）不缓存** — 同步请求每次都重新检测；异步任务默认只复用相同视频尚未完成的任务，传 `cache_enabled=false` 可关闭复用
+- **步骤 2（结构化）有缓存** — 基于视频内容哈希（MD5 快速采样），同一视频的不同路径请求会命中缓存。传 `force=true` 可跳过读取已有缓存并重写缓存；传 `cache_enabled=false` 会完全关闭本次请求的缓存读写和异步任务复用
 - **步骤 3（描述）有独立缓存** — 描述结果存储在 `_descriptions.json` 中，传 `force=true` 可强制重新生成
 - **场景缩略图文件持久化** — 保存在 `scenes/{video_hash}/grids/scene_NNN.jpg`，与元数据缓存独立
 

@@ -63,7 +63,9 @@ async def submit_structure_job(
 
     video_hash = compute_video_hash(abs_path)
 
-    existing = get_pending_job_by_video_hash("structure", video_hash)
+    existing = (
+        get_pending_job_by_video_hash("structure", video_hash) if req.cache_enabled else None
+    )
     if existing:
         logger.info("structure job 已存在，复用: id=%s hash=%s", existing, video_hash)
         return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
@@ -74,6 +76,7 @@ async def submit_structure_job(
         "detect_job_id": req.detect_job_id,
         "frame_grid": req.frame_grid,
         "force": req.force,
+        "cache_enabled": req.cache_enabled,
         "grid_rows": req.grid_rows,
         "grid_cols": req.grid_cols,
     }
@@ -87,7 +90,7 @@ async def submit_structure_job(
         run_structure.task_class,
         task_args=(abs_path,),
         task_kwargs=task_kwargs,
-        video_hash=video_hash,
+        video_hash=video_hash if req.cache_enabled else None,
     )
 
     logger.info("提交 structure job: id=%s hash=%s video=%s", job_id, video_hash, abs_path)

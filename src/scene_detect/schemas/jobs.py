@@ -13,3 +13,7 @@ class DetectJobRequest(BaseModel):
     decode_threads: int | None = Field(
         default=None, description="ffmpeg 解码线程数，0=auto；默认用全局配置"
     )
+    cache_enabled: bool = Field(
+        default=True,
+        description="是否复用相同视频未完成的 scene-detect job",
+    )

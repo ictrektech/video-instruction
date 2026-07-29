@@ -70,7 +70,7 @@ async def structure(
         # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
         video_hash = await asyncio.to_thread(compute_video_hash, video_path)
         cache_dir = get_cache_path(video_hash, settings)
-        if not cmd.force and cache_dir.is_dir():
+        if cmd.cache_enabled and not cmd.force and cache_dir.is_dir():
             cached = await asyncio.to_thread(
                 load_cached_result,
                 cache_dir,
@@ -84,7 +84,8 @@ async def structure(
             logger.info("缓存未命中，重新处理: %s", cache_dir)
 
         # miss / force：清旧产物，避免残留 grid 与过期描述
-        await asyncio.to_thread(invalidate_cache_dir, cache_dir)
+        if cmd.cache_enabled:
+            await asyncio.to_thread(invalidate_cache_dir, cache_dir)
 
         # ── Step 1: 提取元数据 ──────────────────────────────────────────
         t0 = time.time()
@@ -110,7 +111,7 @@ async def structure(
                 settings.video_grid_tile_max_height,
                 cmd.grid_rows,
                 cmd.grid_cols,
-                cache_dir,
+                cache_dir if cmd.cache_enabled else None,
                 settings.video_ffmpeg_timeout,
             )
             for grid_item, _warnings in grid_results:
@@ -136,7 +137,9 @@ async def structure(
                 has_audio=metadata["has_audio"],
                 total_frames=metadata["total_frames"],
             ),
-            grid_base_path=f"{settings.video_scenes_dir}/{video_hash}/grids/",
+            grid_base_path=(
+                f"{settings.video_scenes_dir}/{video_hash}/grids/" if cmd.cache_enabled else ""
+            ),
             scenes=scenes,
             warnings=warnings,
             stage_timings=stage_timings,
@@ -144,10 +147,11 @@ async def structure(
         )
 
         # ── Step 4: 写入缓存 ────────────────────────────────────────
-        try:
-            await asyncio.to_thread(save_cached_result, cache_dir, result)
-        except Exception as exc:
-            logger.warning("缓存写入失败: %s", exc)
+        if cmd.cache_enabled:
+            try:
+                await asyncio.to_thread(save_cached_result, cache_dir, result)
+            except Exception as exc:
+                logger.warning("缓存写入失败: %s", exc)
 
         return result
     finally:
