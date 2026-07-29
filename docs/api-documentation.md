@@ -26,6 +26,7 @@
   - [5.3 场景描述 — POST /api/v1/video/describe](#53-场景描述--post-apiv1videodescribe)
   - [5.4 清除缓存 — DELETE /api/v1/video/cache](#54-清除缓存--delete-apiv1videocache)
   - [5.5 存储路径 — GET /api/v1/video/storage](#55-存储路径--get-apiv1videostorage)
+  - [5.6 异步任务 API — /api/v2/*/jobs](#56-异步任务-api--apiv2jobs)
 - [6. 典型调用流程](#6-典型调用流程)
 
 ---
@@ -786,6 +787,195 @@ GET /api/v1/video/storage
   }
 }
 ```
+
+---
+
+### 5.6 异步任务 API — /api/v2/*/jobs
+
+异步任务接口用于提交长耗时的视频处理任务，并通过轮询查询任务状态。任务存储在共享 jobs 表中，相同 `job_type + video_hash` 若已有 `queued` 或 `running` 任务，会直接复用现有 `job_id`。
+
+#### 通用任务状态
+
+| 状态 | 说明 |
+|---|---|
+| `queued` | 已入队，等待 worker 执行 |
+| `running` | worker 正在执行 |
+| `succeeded` | 执行成功，`result` 非空 |
+| `failed` | 执行失败，`error` 非空 |
+
+#### 通用提交响应
+
+所有 `POST .../jobs` 成功时返回 `ResponseDTO<JobSubmitResponse>`。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `data.job_id` | `string` | 任务 ID，UUID 字符串 |
+| `data.status` | `string` | 固定为 `queued` |
+| `data.poll_url` | `string` | 查询任务状态的相对路径 |
+
+示例：
+
+```json
+{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "8c30a7f2-8263-471d-9c7b-4fc00d9f38dd",
+    "status": "queued",
+    "poll_url": "/api/v2/scenes/detect/jobs/8c30a7f2-8263-471d-9c7b-4fc00d9f38dd"
+  }
+}
+```
+
+#### 通用查询响应
+
+所有 `GET .../jobs/{job_id}` 成功时返回 `ResponseDTO<JobStatusResponse>`。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `data.job_id` | `string` | 任务 ID |
+| `data.type` | `string` | 任务类型：`scene_detect` / `structure` / `describe` |
+| `data.status` | `string` | 任务状态：`queued` / `running` / `succeeded` / `failed` |
+| `data.created_at` | `int \| null` | 创建时间 Unix 秒时间戳 |
+| `data.started_at` | `int \| null` | 开始执行时间 Unix 秒时间戳 |
+| `data.finished_at` | `int \| null` | 完成时间 Unix 秒时间戳 |
+| `data.attempt` | `int` | 执行尝试次数 |
+| `data.result` | `object \| null` | 成功结果。仅 `status="succeeded"` 时非空，结构取决于任务类型 |
+| `data.error` | `JobErrorDTO \| null` | 失败信息。仅 `status="failed"` 时非空 |
+| `data.error.code` | `string \| null` | 任务错误代码 |
+| `data.error.message` | `string \| null` | 错误消息 |
+| `data.error.detail` | `string \| null` | 错误详情 |
+
+#### 场景检测异步任务
+
+```
+POST /api/v2/scenes/detect/jobs
+GET  /api/v2/scenes/detect/jobs/{job_id}
+```
+
+提交请求字段：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `video_path` | `string` | **必填** | — | 视频文件路径。相对于 scene-detect 的 `data_base_path`，也支持绝对路径 |
+| `threshold` | `float \| null` | 可选 | `null` | 场景检测阈值。`null` 时按视频时长策略自动选择 |
+| `max_scenes` | `int \| null` | 可选 | `null` | 最大场景数。`null` 时按视频时长策略自动选择，`0` 表示不限制 |
+| `scale_width` | `int \| null` | 可选 | `null` | 检测管道 scale 宽度。`null` 使用服务端配置，`0` 表示不缩放 |
+| `decode_threads` | `int \| null` | 可选 | `null` | ffmpeg 解码线程数。`null` 使用服务端配置，`0` 表示 ffmpeg auto |
+
+提交示例：
+
+```json
+{
+  "video_path": "video/sample.mp4",
+  "threshold": 30.0,
+  "max_scenes": 80,
+  "scale_width": 640,
+  "decode_threads": 2
+}
+```
+
+成功结果 `data.result` 结构：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `metadata` | `SceneMetadata` | 视频元信息 |
+| `policy` | `ScenePolicyDTO` | 本次检测实际生效的策略参数 |
+| `scenes` | `SceneBoundary[]` | 场景边界列表 |
+| `warnings` | `WarningDTO[]` | 警告信息 |
+
+#### 视频结构化异步任务
+
+```
+POST /api/v2/video/structure/jobs
+GET  /api/v2/video/structure/jobs/{job_id}
+```
+
+提交请求字段：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `video_path` | `string` | **必填** | — | 视频文件路径。相对于 structure 的 `data_base_path`，也支持绝对路径 |
+| `scenes` | `SceneBoundaryInput[] \| null` | 条件必填 | `null` | 场景边界列表。与 `detect_job_id` 二选一 |
+| `detect_job_id` | `string \| null` | 条件必填 | `null` | 已成功的 scene-detect job ID。与 `scenes` 二选一 |
+| `frame_grid` | `bool` | 可选 | `true` | 是否生成场景拼图 |
+| `force` | `bool` | 可选 | `false` | 强制重新结构化，忽略已有缓存 |
+| `grid_rows` | `int` | 可选 | `3` | 场景图片拼接行数。注意异步接口默认是 3 |
+| `grid_cols` | `int` | 可选 | `3` | 场景图片拼接列数。注意异步接口默认是 3 |
+
+`scenes` 与 `detect_job_id` 至少提供一个；如果提供 `detect_job_id`，该 detect job 必须已 `succeeded`，结构化 worker 会读取其 `result.scenes`。
+
+提交示例（引用检测任务）：
+
+```json
+{
+  "video_path": "video/sample.mp4",
+  "detect_job_id": "8c30a7f2-8263-471d-9c7b-4fc00d9f38dd",
+  "frame_grid": true,
+  "force": false,
+  "grid_rows": 3,
+  "grid_cols": 3
+}
+```
+
+提交示例（直接传 scenes）：
+
+```json
+{
+  "video_path": "video/sample.mp4",
+  "scenes": [
+    {
+      "scene_index": 0,
+      "start_frame": 0,
+      "end_frame": 450,
+      "start_time": 0.0,
+      "end_time": 15.02
+    }
+  ],
+  "grid_rows": 1,
+  "grid_cols": 1
+}
+```
+
+成功结果 `data.result` 为 `StructureResultDTO` 完整结构，字段同 [5.2 视频结构化](#52-视频结构化--post-apiv1videostructure)。
+
+#### 场景描述异步任务
+
+```
+POST /api/v2/video/describe/jobs
+GET  /api/v2/video/describe/jobs/{job_id}
+```
+
+提交请求字段：
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `video_hash` | `string` | **必填** | — | 视频内容哈希，由结构化接口或 structure job 返回 |
+| `force` | `bool` | 可选 | `false` | 强制重新描述，忽略已有描述缓存 |
+| `model_cfg` | `object \| null` | 运行时必填 | `null` | 大模型配置。不传或为 `null` 会在任务执行时失败 |
+| `model_cfg.base_url` | `string` | **必填** | — | LLM API 地址（OpenAI 兼容接口） |
+| `model_cfg.api_key` | `string` | 可选 | `""` | API Key |
+| `model_cfg.model_name` | `string` | **必填** | — | 模型名称 |
+| `model_cfg.max_concurrency` | `int` | 可选 | `5` | 并发调用 LLM 的最大场景数 |
+| `model_cfg.request_timeout` | `int` | 可选 | `120` | 单次 LLM 请求超时秒数 |
+
+提交示例：
+
+```json
+{
+  "video_hash": "a1b2c3d4e5f67890",
+  "force": false,
+  "model_cfg": {
+    "base_url": "http://10.144.144.232:21436/v1",
+    "api_key": "sk-fake",
+    "model_name": "minicpm-v:latest",
+    "max_concurrency": 10,
+    "request_timeout": 120
+  }
+}
+```
+
+成功结果 `data.result` 为 `SceneDescriptionResult` 完整结构，字段同 [5.3 场景描述](#53-场景描述--post-apiv1videodescribe)。
 
 ---
 
