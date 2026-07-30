@@ -8,7 +8,7 @@ from pathlib import Path
 
 from shared.callback import send_multipart_event
 from shared.core.errors.exceptions import ApiException
-from shared.task_status import set_task_status
+from shared.task_status import delete_task, set_task_status, wait_for_turn
 from structure.core.settings import settings
 from structure.schemas.video import (
     StructureCallbackCommand,
@@ -19,18 +19,25 @@ from structure.services.video import pipeline
 logger = getLogger(__name__)
 
 
-async def run_structure_callback_task(command: StructureCallbackCommand, video_path: str) -> None:
+async def run_structure_callback_task(
+    task_id: str,
+    command: StructureCallbackCommand,
+    video_path: str,
+) -> None:
     """Run structure processing and report every terminal state through callback."""
     Path(settings.video_work_dir).mkdir(parents=True, exist_ok=True)
-    task_dir = Path(tempfile.mkdtemp(prefix=f"{command.task_id}_", dir=settings.video_work_dir))
+    task_dir = Path(tempfile.mkdtemp(prefix=f"{task_id}_", dir=settings.video_work_dir))
     grid_dir = task_dir / "grids"
     callback_url = str(command.callback_url)
 
     try:
+        claimed = await asyncio.to_thread(wait_for_turn, task_id, "structure")
+        if not claimed:
+            return
         await _send_event(
             callback_url,
             StructureCallbackEvent(
-                task_id=command.task_id,
+                task_id=task_id,
                 asset_id=command.asset_id,
                 status="running",
                 stage="structure",
@@ -39,7 +46,7 @@ async def run_structure_callback_task(command: StructureCallbackCommand, video_p
             ),
         )
         set_task_status(
-            command.task_id,
+            task_id,
             task_type="structure",
             asset_id=command.asset_id,
             status="running",
@@ -55,7 +62,7 @@ async def run_structure_callback_task(command: StructureCallbackCommand, video_p
         await _send_event(
             callback_url,
             StructureCallbackEvent(
-                task_id=command.task_id,
+                task_id=task_id,
                 asset_id=command.asset_id,
                 status="succeeded",
                 stage="done",
@@ -67,7 +74,7 @@ async def run_structure_callback_task(command: StructureCallbackCommand, video_p
             files=files,
         )
         set_task_status(
-            command.task_id,
+            task_id,
             task_type="structure",
             asset_id=command.asset_id,
             status="succeeded",
@@ -76,11 +83,12 @@ async def run_structure_callback_task(command: StructureCallbackCommand, video_p
             message="structure task succeeded",
             result=result.model_dump(mode="json"),
         )
+        delete_task(task_id)
     except Exception as exc:
-        logger.exception("structure callback task failed: task_id=%s", command.task_id)
+        logger.exception("structure callback task failed: task_id=%s", task_id)
         error = _error_payload(exc)
         set_task_status(
-            command.task_id,
+            task_id,
             task_type="structure",
             asset_id=command.asset_id,
             status="failed",
@@ -91,7 +99,7 @@ async def run_structure_callback_task(command: StructureCallbackCommand, video_p
         await _send_event(
             callback_url,
             StructureCallbackEvent(
-                task_id=command.task_id,
+                task_id=task_id,
                 asset_id=command.asset_id,
                 status="failed",
                 stage="structure",

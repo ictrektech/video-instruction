@@ -8,7 +8,7 @@ from shared.callback import assert_callback_url_available
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.schemas.common.response import ResponseDTO
-from shared.task_status import TaskStatusDTO, get_task_status, set_task_status
+from shared.task_status import TaskStatusDTO, create_task, get_task_status
 from structure.core.settings import settings
 from structure.schemas.video import (
     StructureCallbackCommand,
@@ -38,26 +38,22 @@ async def structure_video(
     """提交结构化任务，处理结果通过 callback 推送给调用方。"""
     assert_callback_url_available(str(command.callback_url))
     abs_path = resolve_video_path(command.video_path, settings.data_base_path)
-    set_task_status(
-        command.task_id,
+    task = create_task(
         task_type="structure",
         asset_id=command.asset_id,
-        status="accepted",
-        stage="accepted",
-        progress=0.0,
-        message="structure task accepted",
+        request=command.model_dump(mode="json"),
     )
-    background_tasks.add_task(run_structure_callback_task, command, abs_path)
+    background_tasks.add_task(run_structure_callback_task, task.task_id, command, abs_path)
     logger.info(
-        "accepted structure callback task: task_id=%s asset_id=%s",
-        command.task_id,
+        "queued structure callback task: task_id=%s asset_id=%s",
+        task.task_id,
         command.asset_id,
     )
     return ResponseDTO.ok(
         StructureSubmitDTO(
-            task_id=command.task_id,
+            task_id=task.task_id,
             asset_id=command.asset_id,
-            status="accepted",
+            status=task.status,
         )
     )
 

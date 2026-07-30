@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from logging import getLogger
 
 from fastapi import FastAPI
@@ -6,14 +7,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from scene_detect.api.routes import router as detection_router
 from scene_detect.core.settings import settings
 from shared.middlewares import add_exception_handlers, add_request_context_middleware
+from shared.task_status import init_task_db
 
 logger = getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    init_task_db("scene_detect")
+    yield
 
 
 def create_application() -> FastAPI:
     application = FastAPI(
         title=settings.app_title,
         version=settings.app_version,
+        lifespan=lifespan,
     )
 
     add_exception_handlers(application)

@@ -54,16 +54,15 @@ class DetectRequest(BaseModel):
 class DetectTaskRequest(DetectRequest):
     """场景检测异步任务请求参数"""
 
-    task_id: str = Field(description="调用方任务 ID，用于幂等处理和状态关联")
     asset_id: str = Field(description="调用方资产 ID")
 
 
 class DetectSubmitDTO(BaseModel):
     """场景检测任务提交响应"""
 
-    task_id: str = Field(description="调用方任务 ID")
+    task_id: str = Field(description="服务生成的任务 ID")
     asset_id: str = Field(description="调用方资产 ID")
-    status: str = Field(default="accepted", description="提交状态")
+    status: str = Field(default="queued", description="提交状态")
 
 
 class DetectResult(BaseModel):

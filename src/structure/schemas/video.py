@@ -26,7 +26,6 @@ class StructureCommand(BaseModel):
 class StructureCallbackCommand(StructureCommand):
     """视频结构化 callback 任务请求参数"""
 
-    task_id: str = Field(description="调用方任务 ID，用于幂等处理和状态关联")
     asset_id: str = Field(description="调用方资产 ID")
     callback_url: HttpUrl = Field(description="接收 multipart/form-data 回调的 URL")
 
@@ -34,9 +33,9 @@ class StructureCallbackCommand(StructureCommand):
 class StructureSubmitDTO(BaseModel):
     """结构化任务提交响应"""
 
-    task_id: str = Field(description="调用方任务 ID")
+    task_id: str = Field(description="服务生成的任务 ID")
     asset_id: str = Field(description="调用方资产 ID")
-    status: str = Field(default="accepted", description="提交状态")
+    status: str = Field(default="queued", description="提交状态")
 
 
 class SceneDTO(BaseModel):
@@ -92,7 +91,7 @@ class StructureResultDTO(BaseModel):
 class StructureCallbackEvent(BaseModel):
     """结构化任务回调事件"""
 
-    task_id: str = Field(description="调用方任务 ID")
+    task_id: str = Field(description="服务生成的任务 ID")
     asset_id: str = Field(description="调用方资产 ID")
     status: str = Field(description="任务状态: running/succeeded/failed")
     stage: str = Field(default="", description="当前阶段")

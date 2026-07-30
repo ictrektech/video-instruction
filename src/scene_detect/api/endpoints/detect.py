@@ -10,7 +10,7 @@ from scene_detect.utils import resolve_video_path
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.schemas.common.response import ResponseDTO
-from shared.task_status import TaskStatusDTO, get_task_status, set_task_status
+from shared.task_status import TaskStatusDTO, create_task, get_task_status
 
 logger = getLogger(__name__)
 
@@ -32,26 +32,22 @@ async def detect_scene(
     if not Path(video_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
-    set_task_status(
-        command.task_id,
+    task = create_task(
         task_type="scene_detect",
         asset_id=command.asset_id,
-        status="accepted",
-        stage="accepted",
-        progress=0.0,
-        message="scene detect task accepted",
+        request=command.model_dump(mode="json"),
     )
-    background_tasks.add_task(run_detect_task, command, video_path)
+    background_tasks.add_task(run_detect_task, task.task_id, command, video_path)
     logger.info(
-        "accepted scene detect task: task_id=%s asset_id=%s",
-        command.task_id,
+        "queued scene detect task: task_id=%s asset_id=%s",
+        task.task_id,
         command.asset_id,
     )
     return ResponseDTO.ok(
         DetectSubmitDTO(
-            task_id=command.task_id,
+            task_id=task.task_id,
             asset_id=command.asset_id,
-            status="accepted",
+            status=task.status,
         )
     )
 

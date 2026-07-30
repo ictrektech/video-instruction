@@ -9,22 +9,16 @@ from scene_detect.schemas.scene import DetectResult, DetectTaskRequest
 from scene_detect.services.detector import detect_scenes
 from scene_detect.utils import coalesce
 from shared.core.errors.exceptions import ApiException
-from shared.task_status import set_task_status
+from shared.task_status import set_task_status, wait_for_turn
 
 logger = getLogger(__name__)
 
 
-async def run_detect_task(command: DetectTaskRequest, video_path: str) -> None:
+async def run_detect_task(task_id: str, command: DetectTaskRequest, video_path: str) -> None:
     try:
-        set_task_status(
-            command.task_id,
-            task_type="scene_detect",
-            asset_id=command.asset_id,
-            status="running",
-            stage="scene_detect",
-            progress=0.0,
-            message="scene detect task started",
-        )
+        claimed = await asyncio.to_thread(wait_for_turn, task_id, "scene_detect")
+        if not claimed:
+            return
 
         started_at = time.time()
         boundaries, metadata, policy, warnings = await asyncio.to_thread(
@@ -44,7 +38,7 @@ async def run_detect_task(command: DetectTaskRequest, video_path: str) -> None:
         )
 
         set_task_status(
-            command.task_id,
+            task_id,
             task_type="scene_detect",
             asset_id=command.asset_id,
             status="succeeded",
@@ -54,10 +48,10 @@ async def run_detect_task(command: DetectTaskRequest, video_path: str) -> None:
             result=result.model_dump(mode="json"),
         )
     except Exception as exc:
-        logger.exception("scene detect task failed: task_id=%s", command.task_id)
+        logger.exception("scene detect task failed: task_id=%s", task_id)
         error = _error_payload(exc)
         set_task_status(
-            command.task_id,
+            task_id,
             task_type="scene_detect",
             asset_id=command.asset_id,
             status="failed",

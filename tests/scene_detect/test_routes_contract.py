@@ -4,6 +4,7 @@ from fastapi import BackgroundTasks
 from scene_detect.api.endpoints.detect import detect_scene
 from scene_detect.api.routes import router
 from scene_detect.schemas.scene import DetectTaskRequest
+from shared.task_status import TaskStatusDTO
 
 
 def test_scene_detect_exposes_async_v1_routes_without_v2_jobs():
@@ -22,10 +23,20 @@ async def test_detect_submit_accepts_task_without_callback(monkeypatch, tmp_path
         "scene_detect.api.endpoints.detect.resolve_video_path",
         lambda video_path, _base_path: video_path,
     )
+    monkeypatch.setattr(
+        "scene_detect.api.endpoints.detect.create_task",
+        lambda **_kwargs: TaskStatusDTO(
+            task_id="generated-task-1",
+            asset_id="asset-1",
+            task_type="scene_detect",
+            status="queued",
+            created_at=1,
+            updated_at=1,
+        ),
+    )
 
     response = await detect_scene(
         DetectTaskRequest(
-            task_id="task-1",
             asset_id="asset-1",
             video_path=str(video),
         ),
@@ -33,4 +44,5 @@ async def test_detect_submit_accepts_task_without_callback(monkeypatch, tmp_path
     )
 
     assert response.data is not None
-    assert response.data.status == "accepted"
+    assert response.data.task_id == "generated-task-1"
+    assert response.data.status == "queued"

@@ -23,12 +23,17 @@ services:
       APP_ENV: prod
       APP_PORT: 8910
       DATA_BASE_PATH: /photos
+      TASK_DB_PATH: /app/data/tasks/tasks.db
+      TASK_MAX_CONCURRENCY: ${TASK_MAX_CONCURRENCY:-2}
+      TASK_QUEUE_LIMIT: ${TASK_QUEUE_LIMIT:-20}
+      TASK_RESULT_TTL_SEC: ${TASK_RESULT_TTL_SEC:-3600}
       # 场景检测管道：scale=640 切点稳定；threads=2 兼顾多 worker
       VIDEO_DETECT_SCALE_WIDTH: "640"
       VIDEO_DECODE_THREADS: "2"
     volumes:
       - ../log:/app/log
       - immich-photos:/photos:ro
+      - ../data:/app/data
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -53,6 +58,12 @@ services:
       APP_ENV: prod
       APP_PORT: 8911
       DATA_BASE_PATH: /photos
+      TASK_DB_PATH: /app/data/tasks/tasks.db
+      TASK_MAX_CONCURRENCY: ${TASK_MAX_CONCURRENCY:-2}
+      TASK_QUEUE_LIMIT: ${TASK_QUEUE_LIMIT:-20}
+      TASK_RESULT_TTL_SEC: ${TASK_RESULT_TTL_SEC:-3600}
+      CALLBACK_RETRY_ATTEMPTS: ${CALLBACK_RETRY_ATTEMPTS:-3}
+      CALLBACK_RETRY_DELAY_SEC: ${CALLBACK_RETRY_DELAY_SEC:-1}
       VIDEO_GRID_FFMPEG_THREADS: "2"
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
@@ -61,6 +72,7 @@ services:
     volumes:
       - ../log:/app/log
       - immich-photos:/photos:ro
+      - ../data:/app/data
     networks:
       - video-instruction-net
     restart: unless-stopped

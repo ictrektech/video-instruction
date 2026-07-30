@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -37,9 +39,32 @@ async def send_multipart_event(
     callback_url: str,
     event: BaseModel | dict[str, Any],
     files: list[tuple[str, str, bytes, str]] | None = None,
+    *,
+    attempts: int | None = None,
+    retry_delay_sec: float | None = None,
 ) -> None:
     body, content_type = encode_multipart(event, files or [])
-    await asyncio.to_thread(_post_multipart, callback_url, body, content_type)
+    resolved_attempts = attempts if attempts is not None else _int_env("CALLBACK_RETRY_ATTEMPTS", 3)
+    resolved_delay = (
+        retry_delay_sec
+        if retry_delay_sec is not None
+        else float(os.getenv("CALLBACK_RETRY_DELAY_SEC", "1"))
+    )
+    await asyncio.to_thread(
+        _post_multipart_with_retry,
+        callback_url,
+        body,
+        content_type,
+        max(resolved_attempts, 1),
+        max(resolved_delay, 0),
+    )
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return int(raw)
 
 
 def encode_multipart(
@@ -90,3 +115,23 @@ def _post_multipart(callback_url: str, body: bytes, content_type: str) -> None:
                 raise RuntimeError(f"callback failed with HTTP {response.status}")
     except URLError as exc:
         raise RuntimeError(f"callback request failed: {exc}") from exc
+
+
+def _post_multipart_with_retry(
+    callback_url: str,
+    body: bytes,
+    content_type: str,
+    attempts: int,
+    retry_delay_sec: float,
+) -> None:
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            _post_multipart(callback_url, body, content_type)
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(retry_delay_sec * (2**attempt))
+    if last_exc is not None:
+        raise last_exc

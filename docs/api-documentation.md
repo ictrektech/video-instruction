@@ -188,13 +188,12 @@ Content-Type: application/json
 
 #### 功能说明
 
-提交场景检测任务。接口立即返回 `accepted`；实际检测在后台执行，调用方通过 `GET /api/v1/scenes/detect/tasks/{task_id}` 查询状态和最终场景边界结果。
+提交场景检测任务。服务生成唯一 `task_id` 并写入 SQLite 任务队列，接口立即返回 `queued`；实际检测在后台按并发限制执行，调用方通过 `GET /api/v1/scenes/detect/tasks/{task_id}` 查询状态和最终场景边界结果。
 
 #### 请求参数
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `task_id` | `string` | **必填** | — | 调用方任务 ID，用于幂等处理和状态关联 |
 | `asset_id` | `string` | **必填** | — | 调用方资产 ID |
 | `video_path` | `string` | **必填** | — | 视频文件路径，相对于 `data_base_path`，也支持绝对路径 |
 | `threshold` | `float \| null` | 可选 | `null` | 场景检测阈值。`null` 时按视频时长策略自动选择 |
@@ -205,7 +204,6 @@ Content-Type: application/json
 
 ```json
 {
-  "task_id": "detect-task-001",
   "asset_id": "immich-asset-001",
   "video_path": "video/sample.mp4",
   "threshold": 30.0
@@ -219,9 +217,9 @@ Content-Type: application/json
   "code": 0,
   "msg": "操作成功",
   "data": {
-    "task_id": "detect-task-001",
+    "task_id": "a0f30a58-77f7-48d3-bd0b-f5c455123456",
     "asset_id": "immich-asset-001",
-    "status": "accepted"
+    "status": "queued"
   }
 }
 ```
@@ -235,7 +233,7 @@ Content-Type: application/json
   "code": 0,
   "msg": "操作成功",
   "data": {
-    "task_id": "detect-task-001",
+    "task_id": "a0f30a58-77f7-48d3-bd0b-f5c455123456",
     "asset_id": "immich-asset-001",
     "task_type": "scene_detect",
     "status": "succeeded",
@@ -301,7 +299,7 @@ Content-Type: application/json
 
 #### 功能说明
 
-提交视频结构化任务。接口会先检查 `callback_url` 是否可达，再返回 `accepted`；实际处理在服务后台执行，任务状态与最终结果通过调用方提供的 `callback_url` 以 `multipart/form-data` 推送。
+提交视频结构化任务。接口会先检查 `callback_url` 是否可达，再由服务生成唯一 `task_id` 并写入 SQLite 任务队列，返回 `queued`；实际处理在服务后台按并发限制执行，任务状态与最终结果通过调用方提供的 `callback_url` 以 `multipart/form-data` 推送。
 
 **前置条件：** 必须先调用场景检测服务获取 `scenes` 列表。
 
@@ -310,7 +308,7 @@ Content-Type: application/json
 #### 执行流水线
 
 ```
-Step 0: 接收任务 → 返回 accepted
+Step 0: 接收任务 → 写入 SQLite 队列 → 返回 queued
 Step 1: ffprobe 提取视频元数据（fps/分辨率/编码/时长）
 Step 2: 接收场景边界（来自场景检测服务的 scenes 数组）
 Step 3: 每场景采样 grid_rows×grid_cols 帧 → ffmpeg 提取 → PIL 拼接到临时目录
@@ -321,7 +319,6 @@ Step 4: multipart/form-data callback 推送 succeeded 或 failed
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `task_id` | `string` | **必填** | — | 调用方任务 ID，用于幂等处理和状态关联 |
 | `asset_id` | `string` | **必填** | — | 调用方资产 ID |
 | `callback_url` | `string` | **必填** | — | 接收结构化状态和结果的 callback URL |
 | `video_path` | `string` | **必填** | — | 视频文件路径，相对于 `data_base_path` |
@@ -350,7 +347,6 @@ POST /api/v1/video/structure HTTP/1.1
 Content-Type: application/json
 
 {
-  "task_id": "immich-task-001",
   "asset_id": "immich-asset-001",
   "callback_url": "http://immich_server:3001/api/video-structure/callback",
   "video_path": "video/sample.mp4",
@@ -382,7 +378,6 @@ POST /api/v1/video/structure HTTP/1.1
 Content-Type: application/json
 
 {
-  "task_id": "immich-task-001",
   "asset_id": "immich-asset-001",
   "callback_url": "http://immich_server:3001/api/video-structure/callback",
   "video_path": "video/sample.mp4",
@@ -405,7 +400,6 @@ POST /api/v1/video/structure HTTP/1.1
 Content-Type: application/json
 
 {
-  "task_id": "immich-task-001",
   "asset_id": "immich-asset-001",
   "callback_url": "http://immich_server:3001/api/video-structure/callback",
   "video_path": "video/sample.mp4",
@@ -420,9 +414,9 @@ Content-Type: application/json
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `data.task_id` | `string` | 调用方任务 ID |
+| `data.task_id` | `string` | 服务生成的任务 ID |
 | `data.asset_id` | `string` | 调用方资产 ID |
-| `data.status` | `string` | 固定为 `accepted`，表示服务已接收任务 |
+| `data.status` | `string` | 固定为 `queued`，表示服务已接收并入队 |
 
 #### Callback 事件
 
@@ -430,7 +424,7 @@ Content-Type: application/json
 
 ```json
 {
-  "task_id": "immich-task-001",
+  "task_id": "a0f30a58-77f7-48d3-bd0b-f5c455123456",
   "asset_id": "immich-asset-001",
   "status": "running",
   "stage": "structure",
@@ -453,7 +447,7 @@ Content-Type: application/json
 
 ```json
 {
-  "task_id": "immich-task-001",
+  "task_id": "a0f30a58-77f7-48d3-bd0b-f5c455123456",
   "asset_id": "immich-asset-001",
   "status": "failed",
   "stage": "structure",
@@ -503,16 +497,16 @@ Content-Type: application/json
   "code": 0,
   "msg": "操作成功",
   "data": {
-    "task_id": "immich-task-001",
+    "task_id": "a0f30a58-77f7-48d3-bd0b-f5c455123456",
     "asset_id": "immich-asset-001",
-    "status": "accepted"
+    "status": "queued"
   }
 }
 ```
 
 #### 状态查询响应
 
-`GET /api/v1/video/structure/tasks/{task_id}` 返回 `ResponseDTO<TaskStatusDTO>`，用于调试和容错。查询结果可包含 `accepted`、`running`、`succeeded`、`failed` 状态；成功结果中的图片仍只通过 callback 的 file part 交付，不由查询接口承载。
+`GET /api/v1/video/structure/tasks/{task_id}` 返回 `ResponseDTO<TaskStatusDTO>`，用于调试和容错。查询结果可包含 `queued`、`running`、`succeeded`、`failed` 状态；成功结果中的图片仍只通过 callback 的 file part 交付，不由查询接口承载。
 
 ---
 
@@ -539,9 +533,9 @@ Content-Type: application/json
   │  1. 场景检测                        │                        │
   ├───────────────────────────────────>│                        │
   │  POST /api/v1/scenes/detect        │                        │
-  │  { task_id, asset_id, video_path }                          │
+  │  { asset_id, video_path }                                   │
   │<───────────────────────────────────┤                        │
-  │  { task_id, asset_id, status: accepted }                    │
+  │  { task_id, asset_id, status: queued }                      │
   │  GET /api/v1/scenes/detect/tasks/{task_id}                  │
   │<───────────────────────────────────┤                        │
   │  { status: succeeded, result: { scenes } }                  │
@@ -549,9 +543,9 @@ Content-Type: application/json
   │  2. 视频结构化                       │                        │
   ├────────────────────────────────────────────────────────────>│
   │  POST /api/v1/video/structure                                │
-  │  { task_id, asset_id, video_path, scenes, callback_url }    │
+  │  { asset_id, video_path, scenes, callback_url }             │
   │<────────────────────────────────────────────────────────────┤
-  │  { task_id, asset_id, status: accepted }                    │
+  │  { task_id, asset_id, status: queued }                      │
   │                                    │                        │
   │  3. 状态/结果回调                     │                        │
   │<────────────────────────────────────────────────────────────┤
@@ -565,10 +559,21 @@ Content-Type: application/json
 - **调用方管理产物** — Immich 或其他调用方通过 multipart callback 接收图片，并自行保存、删除、备份和迁移。
 - **无缓存目录契约** — 当前 dev 设计不再暴露 `/api/v1/video/storage`，也不要求挂载 `/data/video-structure-cache`。
 
+### 任务队列说明
+
+- **任务状态存储** — SQLite，默认 `TASK_DB_PATH=/app/data/tasks/tasks.db`。
+- **最大并发** — `TASK_MAX_CONCURRENCY`，默认 `2`，按任务类型分别限制。
+- **队列上限** — `TASK_QUEUE_LIMIT`，默认 `20`；超过上限时提交接口返回业务错误。
+- **结果 TTL** — `TASK_RESULT_TTL_SEC`，默认 `3600` 秒。`running` 任务不会被 TTL 强制中断；任务结束时若已超过 TTL，结果直接丢弃。
+- **终态查询即消费** — `succeeded` / `failed` 状态被 `GET /tasks/{task_id}` 成功返回后立即删除；后续查询返回任务不存在。
+- **重启不续跑** — 服务启动时会清理本服务类型遗留的 `queued` / `running` 任务；调用方收到 404 后重新提交。
+- **结构化 callback 重试** — `CALLBACK_RETRY_ATTEMPTS` 默认 `3`，`CALLBACK_RETRY_DELAY_SEC` 默认 `1` 秒，按指数退避重试。
+
 ### 容器挂载建议
 
 ```
 ${UPLOAD_LOCATION}/photos:/photos:ro
+../data:/app/data
 ```
 
 ---

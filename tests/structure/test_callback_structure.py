@@ -7,6 +7,7 @@ import pytest
 from fastapi import BackgroundTasks
 
 from shared.callback import encode_multipart
+from shared.task_status import TaskStatusDTO
 from structure.api.endpoints.structure import structure_video
 from structure.api.routes import router
 from structure.schemas.video import (
@@ -67,10 +68,20 @@ async def test_structure_submit_checks_callback_url_before_accept(monkeypatch):
         "structure.api.endpoints.structure.resolve_video_path",
         lambda video_path, _base_path: video_path,
     )
+    monkeypatch.setattr(
+        "structure.api.endpoints.structure.create_task",
+        lambda **_kwargs: TaskStatusDTO(
+            task_id="generated-task-1",
+            asset_id="asset-1",
+            task_type="structure",
+            status="queued",
+            created_at=1,
+            updated_at=1,
+        ),
+    )
 
     response = await structure_video(
         StructureCallbackCommand(
-            task_id="task-1",
             asset_id="asset-1",
             callback_url="http://callback.local/video-structure",
             video_path="/photos/demo.mp4",
@@ -81,7 +92,8 @@ async def test_structure_submit_checks_callback_url_before_accept(monkeypatch):
     )
 
     assert response.data is not None
-    assert response.data.status == "accepted"
+    assert response.data.task_id == "generated-task-1"
+    assert response.data.status == "queued"
     assert checked == ["http://callback.local/video-structure"]
 
 
