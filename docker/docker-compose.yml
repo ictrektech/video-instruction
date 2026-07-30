@@ -15,7 +15,6 @@ services:
       - -c
       - |
         set -e
-        uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run scene-detect
     ports:
       - "${SCENE_DETECTION_PORT:-8910}:8910"
@@ -23,17 +22,13 @@ services:
       APP_ENV: prod
       APP_PORT: 8910
       DATA_BASE_PATH: /photos
-      CACHE_BASE_PATH: /data/video-structure-cache
       # 场景检测管道：scale=640 切点稳定；threads=2 兼顾多 worker
       VIDEO_DETECT_SCALE_WIDTH: "640"
       VIDEO_DECODE_THREADS: "2"
     volumes:
       - /data:/data:ro
       - ../log:/app/log
-      - ${UPLOAD_LOCATION}/photos:/photos
-      - ../data:/app/data
-      # worker 也可能处理 structure 任务，需要可写的缓存目录
-      - /data/video-structure-cache:/data/video-structure-cache
+      - ${UPLOAD_LOCATION}/photos:/photos:ro
     networks:
       - video-instruction-net
     restart: unless-stopped
@@ -51,7 +46,6 @@ services:
       - -c
       - |
         set -e
-        uv run structure-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run structure
     ports:
       - "${STRUCTURE_PORT:-8911}:8911"
@@ -59,7 +53,6 @@ services:
       APP_ENV: prod
       APP_PORT: 8911
       DATA_BASE_PATH: /photos
-      CACHE_BASE_PATH: /data/video-structure-cache
       VIDEO_GRID_FFMPEG_THREADS: "2"
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
@@ -68,9 +61,7 @@ services:
     volumes:
       - /data:/data:ro
       - ../log:/app/log
-      - ${UPLOAD_LOCATION}/photos:/photos
-      - /data/video-structure-cache:/data/video-structure-cache
-      - ../data:/app/data
+      - ${UPLOAD_LOCATION}/photos:/photos:ro
     networks:
       - video-instruction-net
     restart: unless-stopped

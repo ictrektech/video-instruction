@@ -26,6 +26,7 @@ def extract_scene_grids(
     grid_rows: int = 3,
     grid_cols: int = 3,
     cache_dir: Path | None = None,
+    output_dir: Path | None = None,
     ffmpeg_timeout: int = 60,
 ) -> list[tuple[SceneDTO, list[WarningDTO]]]:
     """为每个场景采样帧并拼接为 rows x cols 网格图。
@@ -60,15 +61,11 @@ def extract_scene_grids(
                 ffmpeg_timeout,
             )
 
-            # 若指定了缓存目录，将 grid 图片持久化到缓存路径
-            if cache_dir is not None:
-                cache_grid_dir = cache_dir / "grids"
-                cache_grid_dir.mkdir(parents=True, exist_ok=True)
-                persistent_path = cache_grid_dir / f"scene_{index + 1:03d}.jpg"
-                shutil.copy2(grid_path, persistent_path)
-                grid_image = f"scene_{index + 1:03d}.jpg"
-            else:
-                grid_image = None
+            grid_image = f"scene_{index + 1:03d}.jpg"
+            target_dir = output_dir or (cache_dir / "grids" if cache_dir is not None else None)
+            if target_dir is not None:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(grid_path, target_dir / grid_image)
 
             dto = SceneDTO(
                 scene_id=scene_id,

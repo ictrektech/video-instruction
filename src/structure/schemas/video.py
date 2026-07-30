@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class SceneBoundaryInput(BaseModel):
@@ -19,16 +19,24 @@ class StructureCommand(BaseModel):
         description="场景边界列表，由 scene-detection 服务提供"
     )
     frame_grid: bool = Field(default=True, description="是否生成场景拼图")
-    force: bool = Field(default=False, description="强制重新结构化，忽略缓存")
-    cache_enabled: bool = Field(default=False, description="是否启用结构化缓存读写")
     grid_rows: int = Field(default=1, description="场景图片拼接行数")
     grid_cols: int = Field(default=1, description="场景图片拼接列数")
 
 
-class CacheClearCommand(BaseModel):
-    """清除缓存请求参数"""
+class StructureCallbackCommand(StructureCommand):
+    """视频结构化 callback 任务请求参数"""
 
-    video_path: str = Field(description="视频文件路径，相对于 data_base_path")
+    task_id: str = Field(description="调用方任务 ID，用于幂等处理和状态关联")
+    asset_id: str = Field(description="调用方资产 ID")
+    callback_url: HttpUrl = Field(description="接收 multipart/form-data 回调的 URL")
+
+
+class StructureSubmitDTO(BaseModel):
+    """结构化任务提交响应"""
+
+    task_id: str = Field(description="调用方任务 ID")
+    asset_id: str = Field(description="调用方资产 ID")
+    status: str = Field(default="accepted", description="提交状态")
 
 
 class SceneDTO(BaseModel):
@@ -79,3 +87,17 @@ class StructureResultDTO(BaseModel):
     warnings: list[WarningDTO] = Field(default_factory=list, description="警告信息")
     stage_timings: dict[str, float] = Field(default_factory=dict, description="各阶段耗时(秒)")
     elapsed_sec: float = Field(default=0.0, description="总耗时(秒)")
+
+
+class StructureCallbackEvent(BaseModel):
+    """结构化任务回调事件"""
+
+    task_id: str = Field(description="调用方任务 ID")
+    asset_id: str = Field(description="调用方资产 ID")
+    status: str = Field(description="任务状态: running/succeeded/failed")
+    stage: str = Field(default="", description="当前阶段")
+    progress: float | None = Field(default=None, description="任务进度，0-1")
+    message: str = Field(default="", description="状态消息")
+    video_hash: str | None = Field(default=None, description="视频内容哈希")
+    result: StructureResultDTO | None = Field(default=None, description="成功时的结构化结果")
+    error: dict[str, str] | None = Field(default=None, description="失败时错误信息")

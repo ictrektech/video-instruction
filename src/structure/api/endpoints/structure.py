@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from logging import getLogger
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from shared.schemas.common.response import ResponseDTO
 from structure.core.settings import settings
 from structure.schemas.video import (
-    CacheClearCommand,
-    StructureCommand,
-    StructureResultDTO,
+    StructureCallbackCommand,
+    StructureSubmitDTO,
 )
-from structure.services.video import pipeline as video_service
+from structure.services.video.callback import run_structure_callback_task
 from structure.utils import resolve_video_path
 
 logger = getLogger(__name__)
@@ -21,35 +20,29 @@ router = APIRouter()
 
 @router.post(
     "/structure",
-    response_model=ResponseDTO[StructureResultDTO],
-    summary="视频结构化",
-    description="传入视频路径和场景边界，执行九宫格生成 + 结构化分析。"
-    " video_path 支持宿主机绝对路径或相对于 data_base_path 的路径。",
+    response_model=ResponseDTO[StructureSubmitDTO],
+    summary="提交视频结构化任务",
+    description=(
+        "传入视频路径、场景边界和 callback_url，后台执行结构化并通过 "
+        "multipart/form-data 回调状态和结果。"
+    ),
 )
 async def structure_video(
-    command: StructureCommand,
-) -> ResponseDTO[StructureResultDTO]:
-    """对视频执行结构化处理。
-
-    - ``video_path`` 支持宿主机绝对路径（如 ``/data/immich/photos/v.mp4``）
-      或相对 ``data_base_path`` 的路径。
-    - 可传入 ``scenes`` 指定场景边界。
-    - 返回结构包含场景列表和九宫格缩略图路径（相对于 cache_base_path）。
-    """
+    command: StructureCallbackCommand,
+    background_tasks: BackgroundTasks,
+) -> ResponseDTO[StructureSubmitDTO]:
+    """提交结构化任务，处理结果通过 callback 推送给调用方。"""
     abs_path = resolve_video_path(command.video_path, settings.data_base_path)
-    dto = await video_service.structure(command, abs_path)
-    return ResponseDTO.ok(dto)
-
-
-@router.delete(
-    "/cache",
-    summary="清除视频缓存",
-    description="根据视频路径计算 SHA-256，删除对应的缓存目录。",
-)
-async def delete_cache(
-    command: CacheClearCommand,
-) -> ResponseDTO[None]:
-    """清除指定视频的缓存（九宫格图片缓存元数据）。"""
-    abs_path = resolve_video_path(command.video_path, settings.data_base_path)
-    await video_service.clear_cache(abs_path)
-    return ResponseDTO.ok(None)
+    background_tasks.add_task(run_structure_callback_task, command, abs_path)
+    logger.info(
+        "accepted structure callback task: task_id=%s asset_id=%s",
+        command.task_id,
+        command.asset_id,
+    )
+    return ResponseDTO.ok(
+        StructureSubmitDTO(
+            task_id=command.task_id,
+            asset_id=command.asset_id,
+            status="accepted",
+        )
+    )

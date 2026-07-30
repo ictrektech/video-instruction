@@ -15,23 +15,19 @@ services:
       - "${SCENE_DETECTION_PORT:-8910}:8910"
     volumes:
       - /data:/data:ro
-      - ${UPLOAD_LOCATION}/photos:/photos
+      - ${UPLOAD_LOCATION}/photos:/photos:ro
       - ../src:/app/src
+      - ../tests:/app/tests
       - ../config:/app/config
       - ../log:/app/log
       # README.md for hatchling build
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-detection:/app/.venv
-      # 共享 huey.db（jobs 表 + task 队列）
-      - ../data:/app/data
-      # worker 也可能处理 structure 任务，需要可写的缓存目录
-      - /data/video-structure-cache:/data/video-structure-cache
     environment:
       APP_ENV: dev
       APP_PORT: 8910
       DATA_BASE_PATH: /photos
-      CACHE_BASE_PATH: /data/video-structure-cache
       # 场景检测管道：scale=640 切点稳定；threads=2 兼顾多 worker
       VIDEO_DETECT_SCALE_WIDTH: "640"
       VIDEO_DECODE_THREADS: "2"
@@ -47,8 +43,6 @@ services:
       - |
         set -e
         uv sync --frozen --extra dev --extra scene-detect --extra structure
-        # 后台启动 worker（与 API 同进程）
-        uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run scene-detect
 
   structure:
@@ -63,22 +57,18 @@ services:
       - "${STRUCTURE_PORT:-8911}:8911"
     volumes:
       - /data:/data:ro                                                   # 读：宿主机 /data/ 下任意路径（无需翻译）
-      - ${UPLOAD_LOCATION}/photos:/photos                                # 读：immich 照片（兼容相对路径模式）
+      - ${UPLOAD_LOCATION}/photos:/photos:ro                             # 读：immich 照片（兼容相对路径模式）
       - ../src:/app/src
+      - ../tests:/app/tests
       - ../config:/app/config
       - ../log:/app/log
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
       - video-instruction-venv-structure:/app/.venv
-      # 写：集中式缓存（与输入路径解耦）
-      - /data/video-structure-cache:/data/video-structure-cache
-      # 共享 huey.db（jobs 表 + task 队列）
-      - ../data:/app/data
     environment:
       APP_ENV: dev
       APP_PORT: 8911
       DATA_BASE_PATH: /photos
-      CACHE_BASE_PATH: /data/video-structure-cache
       VIDEO_GRID_FFMPEG_THREADS: "2"
       LLM_BASE_URL: http://10.144.144.232:21436/v1
       LLM_API_KEY: sk-fake
@@ -97,8 +87,6 @@ services:
       - |
         set -e
         uv sync --frozen --extra dev --extra scene-detect --extra structure
-        # 后台启动 worker（与 API 同进程）
-        uv run structure-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run structure
 volumes:
   video-instruction-venv-detection:
