@@ -1,121 +1,81 @@
-"""Huey 任务函数：scene-detect 异步执行。
-
-任务函数自管理 jobs 表状态：
-  queued → running → succeeded / failed
-
-通过 @huey.task() 注册到 Huey registry，API 层可用
-run_detect_scenes.task_class(id=..., args=..., kwargs=...) 创建 Task 并入队。
-"""
-
 from __future__ import annotations
 
+import asyncio
 import time
 from logging import getLogger
 
-from shared.jobs import huey, update_job
+from scene_detect.core.settings import settings
+from scene_detect.schemas.scene import DetectResult, DetectTaskRequest
+from scene_detect.services.detector import detect_scenes
+from scene_detect.utils import coalesce
+from shared.core.errors.exceptions import ApiException
+from shared.task_status import set_task_status
 
 logger = getLogger(__name__)
 
 
-@huey.task(context=True)
-def run_detect_scenes(
-    job_id: str,
-    video_path: str,
-    *,
-    threshold: float | None = None,
-    max_scenes: int | None = None,
-    scale_width: int | None = None,
-    decode_threads: int | None = None,
-    task=None,  # injected by context=True
-) -> list[dict]:
-    """Huey 任务：执行场景检测并更新 jobs 状态。
-
-    Args:
-        job_id: jobs 表主键。
-        video_path: 视频绝对路径。
-        threshold: 场景检测阈值；None 使用时长策略。
-        max_scenes: 最大场景数；None 使用时长策略，0 不限制。
-        scale_width: 管道 scale 宽度覆盖；None 用 settings。
-        decode_threads: 解码线程数覆盖；None 用 settings。
-        task: Huey Task 实例（由 context=True 注入）。
-
-    Returns:
-        scenes 列表。
-    """
-    started_at = int(time.time())
-    update_job(job_id, status="running", started_at=started_at, attempt=1)
-
+async def run_detect_task(command: DetectTaskRequest, video_path: str) -> None:
     try:
-        from scene_detect.services.detector import detect_scenes
-
-        boundaries, metadata, policy, warnings = detect_scenes(
-            video_path,
-            threshold,
-            max_scenes,
-            scale_width=scale_width,
-            decode_threads=decode_threads,
+        set_task_status(
+            command.task_id,
+            task_type="scene_detect",
+            asset_id=command.asset_id,
+            status="running",
+            stage="scene_detect",
+            progress=0.0,
+            message="scene detect task started",
         )
 
-        scenes = [
-            {
-                "scene_index": b.scene_index,
-                "start_frame": b.start_frame,
-                "end_frame": b.end_frame,
-                "start_time": b.start_time,
-                "end_time": b.end_time,
-            }
-            for b in boundaries
-        ]
+        started_at = time.time()
+        boundaries, metadata, policy, warnings = await asyncio.to_thread(
+            detect_scenes,
+            video_path,
+            command.threshold,
+            None,
+            scale_width=coalesce(command.scale_width, settings.video_detect_scale_width),
+            decode_threads=coalesce(command.decode_threads, settings.video_decode_threads),
+        )
+        result = DetectResult(
+            metadata=metadata,
+            policy=policy,
+            scenes=boundaries,
+            warnings=warnings,
+            elapsed_sec=round(time.time() - started_at, 2),
+        )
 
-        finished_at = int(time.time())
-        update_job(
-            job_id,
+        set_task_status(
+            command.task_id,
+            task_type="scene_detect",
+            asset_id=command.asset_id,
             status="succeeded",
-            finished_at=finished_at,
-            result_json={
-                "metadata": metadata.model_dump(mode="json"),
-                "policy": policy.model_dump(mode="json"),
-                "scenes": scenes,
-                "warnings": [warning.model_dump(mode="json") for warning in warnings],
-            },
+            stage="done",
+            progress=1.0,
+            message="scene detect task succeeded",
+            result=result.model_dump(mode="json"),
         )
-
-        logger.info(
-            "scene-detect 完成: job=%s video=%s scenes=%d warnings=%d "
-            "elapsed=%ds threshold=%s max_scenes=%s scale=%s decode_threads=%s",
-            job_id,
-            video_path,
-            len(scenes),
-            len(warnings),
-            finished_at - started_at,
-            threshold,
-            max_scenes,
-            scale_width,
-            decode_threads,
-        )
-        return scenes
-
     except Exception as exc:
-        finished_at = int(time.time())
-        update_job(
-            job_id,
+        logger.exception("scene detect task failed: task_id=%s", command.task_id)
+        error = _error_payload(exc)
+        set_task_status(
+            command.task_id,
+            task_type="scene_detect",
+            asset_id=command.asset_id,
             status="failed",
-            finished_at=finished_at,
-            error_code="SCENE_DETECT_ERROR",
-            error_message=str(exc),
+            stage="scene_detect",
+            message=str(exc),
+            error=error,
         )
-        logger.exception(
-            "scene-detect 失败: job=%s video=%s threshold=%s "
-            "max_scenes=%s scale=%s decode_threads=%s",
-            job_id,
-            video_path,
-            threshold,
-            max_scenes,
-            scale_width,
-            decode_threads,
-        )
-        raise
 
 
-# Worker 通过 TASKS 显式引用本模块已注册的 task，避免 side-effect-only import
-TASKS = (run_detect_scenes,)
+def _error_payload(exc: Exception) -> dict[str, str]:
+    if isinstance(exc, ApiException):
+        return {
+            "code": str(exc.code),
+            "message": exc.message,
+            "detail": "",
+        }
+    return {
+        "code": exc.__class__.__name__,
+        "message": str(exc),
+        "detail": "",
+    }

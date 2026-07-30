@@ -4,16 +4,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import BackgroundTasks
 
+from shared.callback import encode_multipart
+from structure.api.endpoints.structure import structure_video
 from structure.api.routes import router
 from structure.schemas.video import (
     SceneBoundaryInput,
+    StructureCallbackCommand,
     StructureCallbackEvent,
     StructureCommand,
     StructureResultDTO,
     VideoMetadataSchema,
 )
-from structure.services.video.callback import _encode_multipart
 from structure.services.video.pipeline import structure
 
 
@@ -44,8 +47,42 @@ def test_structure_exposes_callback_submit_without_v2_or_cache_routes():
     paths = {route.path for route in router.routes}
 
     assert "/api/v1/video/structure" in paths
+    assert "/api/v1/video/structure/tasks/{task_id}" in paths
     assert "/api/v1/video/cache" not in paths
     assert not any(path.startswith("/v2/") for path in paths)
+
+
+@pytest.mark.asyncio
+async def test_structure_submit_checks_callback_url_before_accept(monkeypatch):
+    checked: list[str] = []
+
+    def fake_check(url: str) -> None:
+        checked.append(url)
+
+    monkeypatch.setattr(
+        "structure.api.endpoints.structure.assert_callback_url_available",
+        fake_check,
+    )
+    monkeypatch.setattr(
+        "structure.api.endpoints.structure.resolve_video_path",
+        lambda video_path, _base_path: video_path,
+    )
+
+    response = await structure_video(
+        StructureCallbackCommand(
+            task_id="task-1",
+            asset_id="asset-1",
+            callback_url="http://callback.local/video-structure",
+            video_path="/photos/demo.mp4",
+            scenes=[_boundary()],
+            frame_grid=False,
+        ),
+        BackgroundTasks(),
+    )
+
+    assert response.data is not None
+    assert response.data.status == "accepted"
+    assert checked == ["http://callback.local/video-structure"]
 
 
 @pytest.mark.asyncio
@@ -134,7 +171,7 @@ def test_multipart_callback_contains_event_and_binary_file():
         ),
     )
 
-    body, content_type = _encode_multipart(
+    body, content_type = encode_multipart(
         event,
         [("scene_001", "scene_001.jpg", b"jpeg-data", "image/jpeg")],
     )

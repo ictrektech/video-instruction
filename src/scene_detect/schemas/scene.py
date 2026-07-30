@@ -43,13 +43,27 @@ class DetectRequest(BaseModel):
 
     video_path: str = Field(description="视频文件路径，相对于 data_base_path（也支持绝对路径）")
     threshold: float | None = Field(default=None, description="场景检测阈值，默认使用全局配置")
-    max_scenes: int | None = Field(default=None, description="最大场景数，默认使用全局配置")
     scale_width: int | None = Field(
         default=None, description="检测管道 scale 宽度，0=不缩放；默认用全局配置"
     )
     decode_threads: int | None = Field(
         default=None, description="ffmpeg 解码线程数，0=auto；默认用全局配置"
     )
+
+
+class DetectTaskRequest(DetectRequest):
+    """场景检测异步任务请求参数"""
+
+    task_id: str = Field(description="调用方任务 ID，用于幂等处理和状态关联")
+    asset_id: str = Field(description="调用方资产 ID")
+
+
+class DetectSubmitDTO(BaseModel):
+    """场景检测任务提交响应"""
+
+    task_id: str = Field(description="调用方任务 ID")
+    asset_id: str = Field(description="调用方资产 ID")
+    status: str = Field(default="accepted", description="提交状态")
 
 
 class DetectResult(BaseModel):

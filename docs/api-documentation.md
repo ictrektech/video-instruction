@@ -19,7 +19,7 @@
 - [3. 通用错误码](#3-通用错误码)
 - [4. 场景检测服务 — :8910](#4-场景检测服务--8910)
   - [4.1 健康检查 — GET /api/health](#41-健康检查--get-apihealth)
-  - [4.2 场景检测 — POST /api/v1/scenes/detect](#42-场景检测--post-apiv1scenesdetect)
+  - [4.2 场景检测任务 — POST /api/v1/scenes/detect](#42-场景检测任务--post-apiv1scenesdetect)
 - [5. 视频结构化服务 — :8911](#5-视频结构化服务--8911)
   - [5.1 健康检查 — GET /api/health](#51-健康检查--get-apihealth)
   - [5.2 视频结构化 — POST /api/v1/video/structure](#52-视频结构化--post-apiv1videostructure)
@@ -66,7 +66,8 @@ Video-Instruction 是一个无状态的视频分析服务，提供场景检测�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/health` | 健康检查 |
-| `POST` | `/api/v1/scenes/detect` | 视频场景边界检测 |
+| `POST` | `/api/v1/scenes/detect` | 提交视频场景边界检测任务 |
+| `GET` | `/api/v1/scenes/detect/tasks/{task_id}` | 查询场景检测任务状态 |
 
 #### 视频结构化服务 (8911)
 
@@ -74,6 +75,7 @@ Video-Instruction 是一个无状态的视频分析服务，提供场景检测�
 |---|---|---|
 | `GET` | `/api/health` | 健康检查 |
 | `POST` | `/api/v1/video/structure` | 提交视频结构化任务，状态和结果通过 callback 推送 |
+| `GET` | `/api/v1/video/structure/tasks/{task_id}` | 查询视频结构化任务状态 |
 
 ---
 
@@ -176,154 +178,81 @@ GET /api/health
 
 ---
 
-### 4.2 场景检测 — POST /api/v1/scenes/detect
+### 4.2 场景检测任务 — POST /api/v1/scenes/detect
 
 ```
 POST /api/v1/scenes/detect
+GET  /api/v1/scenes/detect/tasks/{task_id}
 Content-Type: application/json
 ```
 
 #### 功能说明
 
-对视频文件执行场景边界检测。使用 PySceneDetect 的 `ContentDetector` 算法（基于帧间内容差异），通过自定义 ffmpeg 单线程解码器逐帧分析，识别场景切换点。返回每个场景的起止帧号和时间戳。
-
-#### 执行流程
-
-```
-FfmpegVideoStream (单线程 ffmpeg rawvideo 管道)
-  → PySceneDetect ContentDetector (自适应阈值)
-  → 场景边界列表 [{start_frame, end_frame, start_time, end_time}]
-  → 检测失败时回退为单个完整场景
-```
+提交场景检测任务。接口立即返回 `accepted`；实际检测在后台执行，调用方通过 `GET /api/v1/scenes/detect/tasks/{task_id}` 查询状态和最终场景边界结果。
 
 #### 请求参数
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `video_path` | `string` | **必填** | 视频文件路径。相对于 `data_base_path`（默认 `/data/video-structured`），也支持绝对路径 |
-| `threshold` | `float \| null` | 可选 | 场景切换检测阈值，越大越不敏感。未传时按视频时长策略自动选择 |
-| `max_scenes` | `int \| null` | 可选 | 最大场景数限制，超出时压缩。未传时按视频时长策略自动选择 |
-| `scale_width` | `int \| null` | 可选 | 检测管道缩放宽度，默认使用服务端配置（`640`），`0` 表示不缩放 |
-| `decode_threads` | `int \| null` | 可选 | ffmpeg 解码线程数，默认使用服务端配置（`2`），`0` 表示 ffmpeg auto |
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `task_id` | `string` | **必填** | — | 调用方任务 ID，用于幂等处理和状态关联 |
+| `asset_id` | `string` | **必填** | — | 调用方资产 ID |
+| `video_path` | `string` | **必填** | — | 视频文件路径，相对于 `data_base_path`，也支持绝对路径 |
+| `threshold` | `float \| null` | 可选 | `null` | 场景检测阈值。`null` 时按视频时长策略自动选择 |
+| `scale_width` | `int \| null` | 可选 | `null` | 检测管道 scale 宽度。`null` 使用服务端配置，`0` 表示不缩放 |
+| `decode_threads` | `int \| null` | 可选 | `null` | ffmpeg 解码线程数。`null` 使用服务端配置，`0` 表示 ffmpeg auto |
 
 #### 请求示例
 
-```http
-POST /api/v1/scenes/detect HTTP/1.1
-Content-Type: application/json
-
+```json
 {
+  "task_id": "detect-task-001",
+  "asset_id": "immich-asset-001",
   "video_path": "video/sample.mp4",
-  "threshold": 30.0,
-  "max_scenes": 50
+  "threshold": 30.0
 }
 ```
 
-#### 响应参数
-
-**`data` 字段结构：**
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `data.metadata` | `object` | 视频元信息 |
-| `data.metadata.fps` | `float` | 帧率 |
-| `data.metadata.total_frames` | `int` | 总帧数 |
-| `data.metadata.duration` | `float` | 视频时长（秒） |
-| `data.metadata.width` | `int` | 视频宽度（像素） |
-| `data.metadata.height` | `int` | 视频高度（像素） |
-| `data.policy` | `object` | 本次检测实际生效的策略参数 |
-| `data.policy.threshold` | `float` | 实际使用的场景检测阈值 |
-| `data.policy.min_scene_len_sec` | `float` | 短场景合并阈值（秒） |
-| `data.policy.max_scene_count` | `int` | 实际使用的最大场景数 |
-| `data.scenes` | `SceneBoundary[]` | 场景边界数组 |
-| `data.scenes[].scene_index` | `int` | 场景序号（从 0 开始） |
-| `data.scenes[].start_frame` | `int` | 起始帧索引 |
-| `data.scenes[].end_frame` | `int` | 结束帧索引 |
-| `data.scenes[].start_time` | `float` | 起始时间（秒） |
-| `data.scenes[].end_time` | `float` | 结束时间（秒） |
-| `data.warnings` | `WarningDTO[]` | 警告信息列表 |
-| `data.elapsed_sec` | `float` | 检测总耗时（秒） |
-
-#### 响应示例
-
-**检测到多个场景：**
+#### 提交响应
 
 ```json
 {
   "code": 0,
   "msg": "操作成功",
   "data": {
-    "metadata": {
-      "fps": 29.97,
-      "total_frames": 3600,
-      "duration": 120.12,
-      "width": 1920,
-      "height": 1080
-    },
-    "scenes": [
-      {
-        "scene_index": 0,
-        "start_frame": 0,
-        "end_frame": 450,
-        "start_time": 0.0,
-        "end_time": 15.02
-      },
-      {
-        "scene_index": 1,
-        "start_frame": 451,
-        "end_frame": 980,
-        "start_time": 15.05,
-        "end_time": 32.70
-      },
-      {
-        "scene_index": 2,
-        "start_frame": 981,
-        "end_frame": 1499,
-        "start_time": 32.73,
-        "end_time": 50.05
-      }
-    ],
-    "warnings": [],
-    "elapsed_sec": 3.25
+    "task_id": "detect-task-001",
+    "asset_id": "immich-asset-001",
+    "status": "accepted"
   }
 }
 ```
 
-**检测失败回退为单场景：**
+#### 状态查询响应
+
+`GET /api/v1/scenes/detect/tasks/{task_id}` 返回 `ResponseDTO<TaskStatusDTO>`。检测成功后，`data.result` 包含完整 `DetectResult`：
 
 ```json
 {
   "code": 0,
   "msg": "操作成功",
   "data": {
-    "metadata": {
-      "fps": 25.0,
-      "total_frames": 1500,
-      "duration": 60.0,
-      "width": 1280,
-      "height": 720
-    },
-    "scenes": [
-      {
-        "scene_index": 0,
-        "start_frame": 0,
-        "end_frame": 1499,
-        "start_time": 0.0,
-        "end_time": 60.0
-      }
-    ],
-    "warnings": [
-      {
-        "code": "scene_detect_fallback",
-        "message": "场景检测失败，使用全视频作为单个场景",
-        "scope": "scenes",
-        "target_id": ""
-      }
-    ],
-    "elapsed_sec": 1.45
+    "task_id": "detect-task-001",
+    "asset_id": "immich-asset-001",
+    "task_type": "scene_detect",
+    "status": "succeeded",
+    "stage": "done",
+    "progress": 1.0,
+    "result": {
+      "metadata": {"fps": 29.97, "total_frames": 3600, "duration": 120.12, "width": 1920, "height": 1080},
+      "policy": {"threshold": 30.0, "min_scene_len_sec": 5.0, "max_scene_count": 80},
+      "scenes": [{"scene_index": 0, "start_frame": 0, "end_frame": 450, "start_time": 0.0, "end_time": 15.02}],
+      "warnings": [],
+      "elapsed_sec": 3.25
+    }
   }
 }
 ```
+
+失败时 `data.status="failed"`，并带 `data.error` 字段。
 
 ---
 
@@ -372,7 +301,7 @@ Content-Type: application/json
 
 #### 功能说明
 
-提交视频结构化任务。接口立即返回 `accepted`；实际处理在服务后台执行，任务状态与最终结果通过调用方提供的 `callback_url` 以 `multipart/form-data` 推送。
+提交视频结构化任务。接口会先检查 `callback_url` 是否可达，再返回 `accepted`；实际处理在服务后台执行，任务状态与最终结果通过调用方提供的 `callback_url` 以 `multipart/form-data` 推送。
 
 **前置条件：** 必须先调用场景检测服务获取 `scenes` 列表。
 
@@ -581,6 +510,10 @@ Content-Type: application/json
 }
 ```
 
+#### 状态查询响应
+
+`GET /api/v1/video/structure/tasks/{task_id}` 返回 `ResponseDTO<TaskStatusDTO>`，用于调试和容错。查询结果可包含 `accepted`、`running`、`succeeded`、`failed` 状态；成功结果中的图片仍只通过 callback 的 file part 交付，不由查询接口承载。
+
 ---
 
 ### 5.3 已移除接口
@@ -598,7 +531,7 @@ Content-Type: application/json
 
 ## 6. 典型调用流程
 
-### 完整流水线（场景检测 → 结构化 callback）
+### 完整流水线（场景检测查询 → 结构化 callback）
 
 ```
 调用方                          Scene-Detect (:8910)       Structure (:8911)
@@ -606,9 +539,12 @@ Content-Type: application/json
   │  1. 场景检测                        │                        │
   ├───────────────────────────────────>│                        │
   │  POST /api/v1/scenes/detect        │                        │
-  │  { video_path, threshold }         │                        │
+  │  { task_id, asset_id, video_path }                          │
   │<───────────────────────────────────┤                        │
-  │  { scenes: [{...}, ...] }          │                        │
+  │  { task_id, asset_id, status: accepted }                    │
+  │  GET /api/v1/scenes/detect/tasks/{task_id}                  │
+  │<───────────────────────────────────┤                        │
+  │  { status: succeeded, result: { scenes } }                  │
   │                                    │                        │
   │  2. 视频结构化                       │                        │
   ├────────────────────────────────────────────────────────────>│

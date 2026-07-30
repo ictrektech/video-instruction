@@ -4,7 +4,11 @@ from logging import getLogger
 
 from fastapi import APIRouter, BackgroundTasks
 
+from shared.callback import assert_callback_url_available
+from shared.core.errors.error_codes import BusinessErrorCode
+from shared.core.errors.exceptions import ApiException
 from shared.schemas.common.response import ResponseDTO
+from shared.task_status import TaskStatusDTO, get_task_status, set_task_status
 from structure.core.settings import settings
 from structure.schemas.video import (
     StructureCallbackCommand,
@@ -32,7 +36,17 @@ async def structure_video(
     background_tasks: BackgroundTasks,
 ) -> ResponseDTO[StructureSubmitDTO]:
     """提交结构化任务，处理结果通过 callback 推送给调用方。"""
+    assert_callback_url_available(str(command.callback_url))
     abs_path = resolve_video_path(command.video_path, settings.data_base_path)
+    set_task_status(
+        command.task_id,
+        task_type="structure",
+        asset_id=command.asset_id,
+        status="accepted",
+        stage="accepted",
+        progress=0.0,
+        message="structure task accepted",
+    )
     background_tasks.add_task(run_structure_callback_task, command, abs_path)
     logger.info(
         "accepted structure callback task: task_id=%s asset_id=%s",
@@ -46,3 +60,15 @@ async def structure_video(
             status="accepted",
         )
     )
+
+
+@router.get(
+    "/structure/tasks/{task_id}",
+    response_model=ResponseDTO[TaskStatusDTO],
+    summary="查询视频结构化任务状态",
+)
+async def get_structure_task_status(task_id: str) -> ResponseDTO[TaskStatusDTO]:
+    status = get_task_status(task_id)
+    if status is None or status.task_type != "structure":
+        raise ApiException(BusinessErrorCode.JOB_NOT_FOUND, f"task_id={task_id}")
+    return ResponseDTO.ok(status)
