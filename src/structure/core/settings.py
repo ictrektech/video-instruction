@@ -20,7 +20,9 @@ class Settings(BaseSettings):
     )
     video_work_dir: str = Field("/tmp/video-structured", description="视频处理临时工作目录")  # noqa: S108
     video_grid_tile_max_height: int = Field(360, description="九宫格单 tile 最大高度(像素)")
-    video_grid_ffmpeg_threads: int = Field(0, description="九宫格取帧 ffmpeg -threads；0=auto，1=保守")
+    video_grid_ffmpeg_threads: int = Field(
+        0, description="九宫格取帧 ffmpeg -threads；0=auto，1=保守"
+    )
     video_scenes_dir: str = Field(
         "scenes",
         description="场景缓存持久化子目录名，相对于 cache_base_path",

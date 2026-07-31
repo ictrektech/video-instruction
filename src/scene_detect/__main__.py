@@ -1,7 +1,11 @@
 """Application entry point for `scene-detect` command."""
 
+from shared.utils.system import limit_opencv_threads
+
 
 def main() -> None:
+    limit_opencv_threads()
+
     import uvicorn
 
     from scene_detect.core.settings import settings

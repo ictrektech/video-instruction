@@ -46,6 +46,7 @@ from shared.jobs.models import (
     cleanup_expired_jobs as cleanup_expired,
 )
 from shared.jobs.schemas import JobErrorDTO, JobStatusResponse, JobSubmitResponse
+from shared.utils.system import limit_opencv_threads
 
 logger = getLogger(__name__)
 
@@ -135,6 +136,38 @@ def build_job_submit_response(job_id: str, poll_url_prefix: str) -> JobSubmitRes
     )
 
 
+def cleanup_stale_log_fds() -> None:
+    """关闭 server.log 轮转后仍被进程持有的已删除文件描述符。"""
+    import logging.handlers
+
+    for handler in logging.getLogger().root.handlers:
+        if not isinstance(handler, (logging.FileHandler, logging.handlers.RotatingFileHandler)):
+            continue
+        try:
+            fd = handler.stream.fileno() if handler.stream else -1
+            if fd >= 0:
+                import os as _os
+
+                # 检查文件是否已被删除（NFS 上日志轮转后旧文件被 unlink）
+                link = f"/proc/self/fd/{fd}"
+                try:
+                    _os.stat(link)
+                except OSError:
+                    # 文件已删除，关闭旧流并用正确路径重新打开
+                    handler.acquire()
+                    try:
+                        handler.stream.close()  # pyright: ignore[reportOptionalMemberAccess]
+                        handler.stream = open(  # noqa: SIM115
+                            handler.baseFilename,
+                            "a",
+                            encoding="utf-8",  # noqa: SIM115 — 文件对象生命周期由 handler.stream 管理，不能走 context manager
+                        )
+                    finally:
+                        handler.release()
+        except (OSError, AttributeError, NotImplementedError):
+            continue
+
+
 def run_worker(service: str) -> None:
     """启动 Huey Worker。两个 worker CLI 共用此函数。
 
@@ -145,12 +178,16 @@ def run_worker(service: str) -> None:
     import signal
     import sys
 
+    # 限制 OpenMP 线程池，避免 OpenCV/scenedetect 创建数百个 idle 线程
+    limit_opencv_threads()
+
     from scene_detect.services.tasks import TASKS as detect_tasks
     from shared.core.logging import configure_logging
     from structure.core.settings import settings
     from structure.services.tasks import TASKS as structure_tasks
 
     configure_logging(level="DEBUG", path=settings.log_config_path)
+    cleanup_stale_log_fds()
 
     parser = argparse.ArgumentParser(description=f"{service} Huey Worker")
     parser.add_argument("--workers", type=int, default=None, help="并行线程数（默认 4）")

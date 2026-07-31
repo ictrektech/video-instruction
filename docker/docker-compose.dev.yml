@@ -38,6 +38,9 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      # 限制 OpenMP 线程池，避免 OpenCV/scenedetect 创建数百个 idle 线程
+      OMP_NUM_THREADS: "1"
+      OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
       - video-instruction-dev-net
     restart: unless-stopped
@@ -47,6 +50,8 @@ services:
       - |
         set -e
         uv sync --frozen --extra dev --extra scene-detect --extra structure
+        # 安装 watchfiles 避免 uvicorn reload stat 轮询造成的 CPU 空转
+        uv pip install watchfiles
         # 后台启动 worker（与 API 同进程）
         uv run scene-detect-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run scene-detect
@@ -87,6 +92,9 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
       UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      # 限制 OpenMP 线程池，避免 OpenCV/scenedetect 创建数百个 idle 线程
+      OMP_NUM_THREADS: "1"
+      OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
       - video-instruction-dev-net
     restart: unless-stopped
@@ -96,6 +104,8 @@ services:
       - |
         set -e
         uv sync --frozen --extra dev --extra scene-detect --extra structure
+        # 安装 watchfiles 避免 uvicorn reload stat 轮询造成的 CPU 空转
+        uv pip install watchfiles
         # 后台启动 worker（与 API 同进程）
         uv run structure-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run structure

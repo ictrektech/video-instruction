@@ -1,7 +1,11 @@
 """Application entry point for `structure` command."""
 
+from shared.utils.system import limit_opencv_threads
+
 
 def main() -> None:
+    limit_opencv_threads()
+
     import uvicorn
 
     from shared.core.logging import get_log_config
