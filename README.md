@@ -7,46 +7,47 @@
 > bash scripts/init-project.sh
 > ```
 
+`video-instruction` 提供两个面向视频理解的 FastAPI 服务：
+
+- `scene-detection`：视频场景切分，默认监听 `8910`。
+- `structure`：视频结构化与场景描述，默认监听 `8911`。
+
+项目使用 Python 3.13、FastAPI、uv、FFmpeg / ffprobe，并通过 Docker Compose 提供开发和生产部署。
+
 ## 目录
 
 - [技术栈](#技术栈)
 - [快速开始](#快速开始)
-- [项目结构](#项目结构)
-- [开发规范](#开发规范)
+- [服务说明](#服务说明)
+- [配置](#配置)
 - [命令](#命令)
-- [测试](#测试)
 - [部署](#部署)
-
----
-
-video-instruction - FastAPI project，基于 Python 3.13 + PostgreSQL + Redis。
+- [项目结构](#项目结构)
+- [测试](#测试)
 
 ## 技术栈
 
 - **框架**: FastAPI
-- **ORM**: SQLModel (SQLAlchemy + Pydantic)
-- **数据库**: PostgreSQL 18 (asyncpg)
-- **缓存**: Redis 7 (redis.asyncio)
-- **认证**: JWT (python-jose) + bcrypt
-- **限流**: slowapi + 自定义 Redis 令牌桶
-- **迁移**: Alembic
-- **包管理**: uv (astral-sh)
+- **包管理**: uv
+- **配置**: pydantic-settings
+- **任务状态**: SQLite + Huey 封装
+- **视频处理**: FFmpeg / ffprobe、PySceneDetect
+- **图像处理**: Pillow、NumPy
+- **大模型调用**: OpenAI 兼容 `/v1` API
 - **构建**: Hatchling
+- **代码质量**: Ruff、pytest、pre-commit
 
 ## 快速开始
 
 ### 前置条件
 
-- Docker & Docker Compose（推荐，一键启动全部依赖）
-- 或本地安装 Python 3.13、PostgreSQL 18、Redis 7
+- Docker & Docker Compose
+- 或本地安装 Python 3.13、uv、FFmpeg / ffprobe
 
-### 方式一：Docker 开发（推荐）
+### Docker 开发
 
 ```bash
-# 复制环境配置
-cp src/.example.env src/.env
-
-# 启动开发栈（PostgreSQL + Redis + 应用）
+# 按本机照片库路径调整 docker/.env.dev 里的 UPLOAD_LOCATION
 make dev OPTS=-d
 
 # 查看日志
@@ -56,123 +57,90 @@ make dev-logs
 make dev-down
 ```
 
-开发模式特性：
-- 源码通过 volume 挂载，修改即生效（uvicorn --reload）
-- debugpy 远程调试端口 `5678`
-- PostgreSQL 暴露端口 `6432`，Redis 暴露端口 `6380`
-- 独立的 `.venv` 卷，避免跨平台兼容问题
+开发 compose 会启动 `scene-detection` 和 `structure`，并把源码挂载进容器，便于调试和快速验证。
 
-### 方式二：本地开发
+开发模式特性：
+
+- 源码、测试、配置和日志目录通过 volume 挂载。
+- `debugpy` 已安装在开发镜像中，便于远程调试。
+- 两个服务各自使用独立 `.venv` 卷，避免依赖环境互相污染。
+- `UPLOAD_LOCATION` 下的 `photos` 目录会以只读方式挂载到容器内 `/photos`。
+
+### 本地运行
 
 ```bash
-# 安装依赖
 uv sync
 
-# 复制环境配置并修改数据库连接地址
-cp src/.example.env src/.env
+# 场景切分服务
+uv run scene-detect
 
-# 启动服务（自动 reload）
-uv run serve
+# 视频结构化服务
+uv run structure
 ```
 
-服务默认运行在 `http://localhost:8910`，API 文档在 `http://localhost:8910/docs`。
+本地默认端口：
 
-## 项目结构
+| 服务 | 地址 |
+|------|------|
+| `scene-detection` | `http://localhost:8910` |
+| `structure` | `http://localhost:8911` |
 
-```
-.
-├── docs/                       # 开发文档
-│   └── development-guide.md    # 开发规范
-├── src/
-│   ├── main.py                 # ASGI 入口（供 uvicorn 直接使用）
-│   └── app/
-│       ├── __main__.py         # `uv run serve` / `CMD ["serve"]` 入口
-│       ├── main.py             # FastAPI 应用工厂
-│       ├── api/
-│       │   ├── routes.py       # 路由注册
-│       │   ├── deps/           # 依赖注入（认证等）
-│       │   └── endpoints/      # 路由处理器
-│       ├── core/
-│       │   ├── settings/       # 配置管理（pydantic-settings）
-│       │   ├── security/       # JWT、密码加密
-│       │   ├── errors/         # 异常定义与错误码
-│       │   ├── logging/        # 日志配置（YAML + filters）
-│       │   └── request_context.py
-│       ├── db/                 # 数据库会话与初始化
-│       ├── models/             # SQLModel 数据模型
-│       ├── schemas/            # 请求/响应 DTO
-│       ├── services/           # 业务逻辑层
-│       ├── crud/               # 数据访问层
-│       ├── middlewares/        # 中间件（限流、错误处理、上下文）
-│       ├── infrastructure/     # Redis 客户端、令牌桶限流
-│       └── utils/              # 工具函数
-├── config/
-│   └── log_conf.yaml           # 日志配置
-├── docker/
-│   ├── Dockerfile              # 生产镜像（多阶段构建）
-│   ├── Dockerfile.dev          # 开发镜像（debugpy + dev 依赖）
-│   ├── docker-compose.yml      # 生产编排
-│   └── docker-compose.dev.yml  # 开发编排（profiles 模式）
-├── alembic/                    # 数据库迁移
-├── tests/                      # 测试
-├── .dockerignore
-├── .example.env
-├── Makefile
-├── pyproject.toml
-└── .github/workflows/          # CI/CD
+## 服务说明
+
+### scene-detection
+
+场景切分服务读取视频文件，输出场景边界、时间范围和基础元数据。生产镜像为：
+
+```text
+swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-detection:${IMAGE_TAG:-latest}
 ```
 
-## 开发规范
+### structure
 
-参考 [docs/development-guide.md](docs/development-guide.md)，涵盖：
+结构化服务读取视频文件和场景信息，抽帧生成九宫格图，并调用兼容 OpenAI `/v1` 的多模态模型生成场景描述。生产镜像为：
 
-- **新增资源的黄金路径**：Model → Schema → CRUD → Service → Endpoint → Route
-- **各层规范**：Model、Schema、CRUD、Service、Endpoint 的约定
-- **错误处理**：错误码定义、`ApiException` 用法
-- **测试与日志**：测试分类、logger 命名
+```text
+swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-structure:${IMAGE_TAG:-latest}
+```
+
+## 配置
+
+常用环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IMAGE_TAG` | `latest` | 镜像标签 |
+| `SCENE_DETECTION_PORT` | `8910` | 场景切分服务宿主机端口 |
+| `STRUCTURE_PORT` | `8911` | 结构化服务宿主机端口 |
+| `UPLOAD_LOCATION` | 见 `docker/.env.*` | 本仓库独立 compose 使用的照片库根目录，服务内挂载为 `/photos` |
+| `TASK_MAX_CONCURRENCY` | `2` | 单服务任务最大并发 |
+| `TASK_QUEUE_LIMIT` | `20` | 任务队列长度限制 |
+| `LLM_BASE_URL` | `http://10.144.144.232:21436/v1` | 结构化服务调用的大模型 API 地址 |
+| `LLM_API_KEY` | `sk-fake` | 大模型 API Key |
+| `LLM_MODEL_NAME` | `minicpm-v:latest` | 大模型名称 |
+| `LLM_MAX_CONCURRENCY` | `20` | 场景描述并发数 |
 
 ## 命令
 
-### 开发命令
-
 | 命令 | 说明 |
 |------|------|
-| `uv run serve` | 启动服务（热重载） |
-| `uv run pytest` | 运行测试 |
-| `uv run pytest -m "not integration"` | 仅运行单元测试 |
-| `uv run pytest -m integration` | 运行集成测试 |
-| `uv run ruff check` | 代码检查 |
-| `uv run ruff format` | 代码格式化 |
-| `uv run alembic upgrade head` | 执行数据库迁移 |
-| `uv run pre-commit run --all-files` | 运行 pre-commit 检查 |
-
-### Makefile 命令
-
-| 命令 | 说明 |
-|------|------|
-| `make dev` | 启动开发栈（加 `OPTS=-d` 后台运行） |
+| `make dev` | 启动开发栈，加 `OPTS=-d` 后台运行 |
 | `make dev-down` | 停止开发栈 |
 | `make dev-logs` | 查看开发日志 |
 | `make dev-build` | 构建开发镜像 |
 | `make dev-ps` | 查看开发服务状态 |
-| `make dev-reset` | 重置开发栈（清数据重建） |
-| `make build` | 构建生产镜像 |
-| `make prod` | 启动生产栈 |
+| `make build` | 构建生产镜像，并打平台版本标签 |
+| `make tag` | 将当前构建版本标记为 `latest-$(PLATFORM)` |
+| `make push` | 推送版本标签和平台 latest 标签 |
+| `make prod` | 启动本仓库生产栈，加 `OPTS=-d` 后台运行 |
 | `make prod-down` | 停止生产栈 |
 | `make prod-logs` | 查看生产日志 |
-
-## 测试
-
-```bash
-# 运行所有测试
-uv run pytest
-
-# 仅运行单元测试（不依赖 PostgreSQL/Redis）
-uv run pytest -m "not integration"
-
-# 运行集成测试
-uv run pytest -m integration
-```
+| `uv run pytest` | 运行所有测试 |
+| `uv run pytest -m "not integration"` | 运行非集成测试 |
+| `uv run pytest -m integration` | 运行集成测试 |
+| `uv run ruff check` | 代码检查 |
+| `uv run ruff format` | 代码格式化 |
+| `uv run pre-commit run --all-files` | 运行 pre-commit 检查 |
 
 ## 部署
 
@@ -182,18 +150,77 @@ uv run pytest -m integration
 # 构建并打版本标签
 make build
 
-# 推送至 registry（需先配置 REGISTRY）
+# 推送版本标签和平台 latest 标签
 make push
 ```
 
-### 生产部署
+### 独立生产部署
+
+本仓库生产 compose 位于 `docker/docker-compose.yml`：
 
 ```bash
-# 启动生产栈
+# 按环境调整 docker/.env.prod
 make prod OPTS=-d
-
-# 查看日志
-make prod-logs
 ```
 
-> **注意**: 镜像仓库地址默认为 `registry.example.com`，使用前需在 `Makefile` 中修改 `REGISTRY` 变量。正式环境建议配置外部 PostgreSQL 和 Redis，而非使用容器内的服务。
+独立部署时，视频资源通过 `UPLOAD_LOCATION` 挂载到容器内 `/photos`。
+
+## 项目结构
+
+```text
+.
+├── config/
+│   └── log_conf.yaml           # 日志配置
+├── .github/
+│   └── workflows/ci.yml        # CI：Ruff 和 pytest
+├── .dockerignore
+├── .pre-commit-config.yaml
+├── data/                       # 本地任务状态与运行数据
+├── docker/
+│   ├── Dockerfile              # 生产镜像
+│   ├── Dockerfile.dev          # 开发镜像
+│   ├── docker-compose.yml      # 生产编排
+│   ├── docker-compose.dev.yml  # 开发编排
+│   └── docker-compose.test.yml # 测试编排
+├── docs/                       # API 文档和设计说明
+├── log/                        # 本地日志输出
+├── scripts/                    # 项目辅助脚本
+├── src/
+│   ├── scene_detect/           # 场景切分服务
+│   │   ├── api/                # 路由与接口入口
+│   │   ├── core/               # 服务配置
+│   │   ├── schemas/            # 请求/响应模型
+│   │   ├── services/           # 场景检测与任务逻辑
+│   │   ├── __main__.py         # `uv run scene-detect` 入口
+│   │   └── worker.py           # 场景切分 worker 入口
+│   ├── structure/              # 视频结构化服务
+│   │   ├── api/                # 路由与接口入口
+│   │   ├── core/               # 服务配置
+│   │   ├── schemas/            # 结构化、描述与任务模型
+│   │   ├── services/           # 抽帧、缓存、LLM 与结构化逻辑
+│   │   ├── __main__.py         # `uv run structure` 入口
+│   │   └── worker.py           # 结构化 worker 入口
+│   └── shared/                 # 共享响应、任务、回调、日志与工具
+│       ├── core/               # ffprobe、日志、请求上下文等
+│       ├── jobs/               # Huey 任务队列封装
+│       ├── middlewares/        # 通用中间件
+│       ├── schemas/            # 通用 DTO
+│       └── utils/              # 通用工具
+├── tests/                      # 测试
+│   ├── scene_detect/
+│   ├── shared/
+│   └── structure/
+├── uv.lock
+├── Makefile
+└── pyproject.toml
+```
+
+## 测试
+
+```bash
+# 运行所有测试
+uv run pytest
+
+# 代码检查
+uv run ruff check
+```
