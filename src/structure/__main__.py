@@ -21,6 +21,8 @@ def main() -> None:
         ),
         access_log=True,
         reload=settings.app_env == "dev",
+        # 只监听 src/
+        reload_dirs=["src"],
     )
 
 

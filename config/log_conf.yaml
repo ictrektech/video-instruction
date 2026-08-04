@@ -64,6 +64,11 @@ loggers:
     level: INFO
     handlers: [default, server_file]
     propagate: no
+  # uvicorn reload 的 watchfiles 会因日志文件写入刷 INFO 事件，屏蔽掉
+  watchfiles:
+    level: WARNING
+    handlers: [default, server_file]
+    propagate: no
 root:
   handlers: [default, server_file]
   propagate: no
