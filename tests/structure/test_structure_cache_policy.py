@@ -1,4 +1,4 @@
-"""structure 缓存命中与 force/miss 清理策略测试。"""
+"""structure 无状态化：staging 产物写入与 TTL 清理测试。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,28 @@ from structure.schemas.video import (
     StructureCommand,
     StructureResultDTO,
     VideoMetadataSchema,
+    WarningDTO,
 )
-from structure.services.video.cache import invalidate_cache_dir, scenes_match
+from structure.services.video.cache import (
+    cleanup_expired_staging,
+    get_staging_path,
+    load_manifest,
+    load_scenes,
+    load_warnings,
+    write_staging,
+)
 from structure.services.video.description import _descriptions_match_scenes
 from structure.services.video.pipeline import structure
+
+
+def _settings(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        video_work_dir=str(tmp_path / "work"),
+        staging_base_path=str(tmp_path / "staging"),
+        staging_ttl_sec=3600,
+        video_grid_tile_max_height=180,
+        video_grid_ffmpeg_threads=0,
+    )
 
 
 def _boundary(
@@ -69,89 +87,110 @@ def _metadata(duration: float = 1.0, total_frames: int = 25) -> dict:
     }
 
 
-def _patch_structure_env(
-    monkeypatch,
-    tmp_path: Path,
-    *,
-    cached_result: StructureResultDTO | None,
-    video_hash: str = "hash123",
-):
-    """准备 structure 测试环境：真实 cache_dir，mock 掉 hash/metadata/昂贵 IO。"""
-    video = tmp_path / "demo.mp4"
-    video.write_bytes(b"fake-video")
-    cache_dir = tmp_path / "cache" / "scenes" / video_hash
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    settings_stub = SimpleNamespace(
-        video_work_dir=str(tmp_path / "work"),
-        cache_base_path=str(tmp_path / "cache"),
-        video_scenes_dir="scenes",
-        video_grid_tile_max_height=180,
+def _result(video_hash: str = "hash123", grid_image: str = "scene_001.jpg") -> StructureResultDTO:
+    return StructureResultDTO(
+        video_hash=video_hash,
+        metadata=VideoMetadataSchema(video_path="demo.mp4"),
+        staging_dir="/staging/job123",
+        scenes=[
+            _scene_dto(0, 0, 24, 0.0, 1.0, grid_image),
+            _scene_dto(1, 25, 49, 1.0, 2.0, None),
+        ],
+        warnings=[WarningDTO(code="w1", message="warning", scope="s", target_id="t")],
+        stage_timings={"total": 1.0},
+        elapsed_sec=1.0,
     )
-    monkeypatch.setattr("structure.services.video.pipeline.settings", settings_stub)
-    monkeypatch.setattr(
-        "structure.services.video.pipeline.compute_video_hash",
-        lambda _path: video_hash,
-    )
-    monkeypatch.setattr(
-        "structure.services.video.pipeline.get_cache_path",
-        lambda _hash, _settings: cache_dir,
-    )
-    monkeypatch.setattr(
-        "structure.services.video.pipeline.load_cached_result",
-        lambda _cache_dir, _base: cached_result,
-    )
-    monkeypatch.setattr(
-        "structure.services.video.pipeline.extract_metadata",
-        lambda _path: _metadata(),
-    )
-    return video, cache_dir
 
 
-class TestScenesMatch:
-    def test_match_same_bounds_across_input_and_dto(self):
-        request = [_boundary(0, 0, 24, 0.0, 1.0), _boundary(1, 25, 49, 1.0, 2.0)]
-        cached = [
-            _scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg"),
-            _scene_dto(1, 25, 49, 1.0, 2.0, "scene_002.jpg"),
-        ]
-        assert scenes_match(request, cached)
-
-    def test_mismatch_when_bounds_differ(self):
-        request = [_boundary(0, 0, 24, 0.0, 1.0)]
-        cached = [_scene_dto(0, 0, 49, 0.0, 2.0)]
-        assert not scenes_match(request, cached)
-
-    def test_mismatch_when_count_differs(self):
-        request = [_boundary(0, 0, 24, 0.0, 1.0), _boundary(1, 25, 49, 1.0, 2.0)]
-        cached = [_scene_dto(0, 0, 24, 0.0, 1.0)]
-        assert not scenes_match(request, cached)
+class TestGetStagingPath:
+    def test_names_by_job_id(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        path = get_staging_path("job123", settings)
+        assert path == Path(tmp_path) / "staging" / "job123"
 
 
-class TestInvalidateCacheDir:
-    def test_removes_structure_grids_and_descriptions(self, tmp_path: Path):
-        cache_dir = tmp_path / "scenes" / "abc"
-        grids = cache_dir / "grids"
+class TestWriteStaging:
+    def test_writes_manifest_metadata_and_grids(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        staging_dir = get_staging_path("job123", settings)
+        result = _result()
+
+        # 模拟 frame_extract 已把 grid 写进 staging/grids/
+        grids = staging_dir / "grids"
         grids.mkdir(parents=True)
-        (grids / "scene_001.jpg").write_bytes(b"old")
-        (grids / "scene_099.jpg").write_bytes(b"stale")
-        (cache_dir / "_cached.json").write_text("{}", encoding="utf-8")
-        (cache_dir / "_descriptions.json").write_text("{}", encoding="utf-8")
+        (grids / "scene_001.jpg").write_bytes(b"grid-jpg")
 
-        invalidate_cache_dir(cache_dir)
+        write_staging(staging_dir, result, grids_dir_src=None)
 
-        assert not cache_dir.exists()
+        assert (staging_dir / "manifest.json").is_file()
+        assert (staging_dir / "metadata.json").is_file()
+        assert (grids / "scene_001.jpg").is_file()
 
-    def test_noop_when_missing(self, tmp_path: Path):
-        missing = tmp_path / "missing"
-        invalidate_cache_dir(missing)
-        assert not missing.exists()
+        manifest = load_manifest(staging_dir)
+        assert manifest is not None
+        assert manifest["video_hash"] == "hash123"
+        assert len(manifest["scenes"]) == 2
+        assert manifest["scenes"][0]["grid_image"] == "scene_001.jpg"
+        assert manifest["scenes"][1]["grid_image"] is None
+        assert len(manifest["warnings"]) == 1
+
+    def test_load_scenes_restores_dtos(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        staging_dir = get_staging_path("job123", settings)
+        write_staging(staging_dir, _result())
+
+        scenes = load_scenes(staging_dir)
+        assert len(scenes) == 2
+        assert scenes[0].end_frame == 24
+        assert scenes[0].grid_image == "scene_001.jpg"
+
+    def test_load_warnings(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        staging_dir = get_staging_path("job123", settings)
+        write_staging(staging_dir, _result())
+
+        warnings = load_warnings(staging_dir)
+        assert len(warnings) == 1
+        assert warnings[0].code == "w1"
+
+
+class TestCleanupExpiredStaging:
+    def test_removes_expired_dirs(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        root = Path(settings.staging_base_path)
+        old = root / "old_job"
+        new = root / "new_job"
+        old.mkdir(parents=True)
+        new.mkdir(parents=True)
+
+        # 伪造 mtime：old 目录 TTL 之外，new 目录 TTL 之内
+        old_mtime = 1_000_000_000
+        old.stat  # ensure exists
+        import os
+
+        os.utime(old, (old_mtime, old_mtime))
+
+        now = old_mtime + 7200  # 超过 ttl=3600
+        removed = cleanup_expired_staging(settings, now=now)
+
+        assert removed == 1
+        assert not old.exists()
+        assert new.exists()
+
+    def test_noop_when_ttl_zero(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        settings.staging_ttl_sec = 0
+        old = Path(settings.staging_base_path) / "old_job"
+        old.mkdir(parents=True)
+        removed = cleanup_expired_staging(settings)
+        assert removed == 0
+        assert old.exists()
 
 
 class TestDescriptionsMatchScenes:
     def test_match_same_indexes(self):
         descriptions = SceneDescriptionResult(
-            video_hash="h",
+            structure_job_id="j",
             descriptions=[
                 SceneDescriptionItem(scene_index=0, grid_image="a.jpg", status="ok"),
                 SceneDescriptionItem(scene_index=1, grid_image="b.jpg", status="ok"),
@@ -162,7 +201,7 @@ class TestDescriptionsMatchScenes:
 
     def test_mismatch_count(self):
         descriptions = SceneDescriptionResult(
-            video_hash="h",
+            structure_job_id="j",
             descriptions=[
                 SceneDescriptionItem(scene_index=0, grid_image="a.jpg", status="ok"),
                 SceneDescriptionItem(scene_index=1, grid_image="b.jpg", status="ok"),
@@ -172,107 +211,80 @@ class TestDescriptionsMatchScenes:
         assert not _descriptions_match_scenes(descriptions, scenes)
 
 
-class TestStructureCachePolicy:
+class TestStructurePipeline:
     @pytest.mark.asyncio
-    async def test_cache_hit_when_scenes_match(self, monkeypatch, tmp_path: Path):
-        cached_result = StructureResultDTO(
-            video_hash="hash123",
-            metadata=VideoMetadataSchema(video_path="demo.mp4"),
-            grid_base_path="scenes/hash123/grids/",
-            scenes=[_scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg")],
-            stage_timings={"total": 1.0},
-            elapsed_sec=1.0,
-        )
-        video, cache_dir = _patch_structure_env(monkeypatch, tmp_path, cached_result=cached_result)
-        (cache_dir / "grids").mkdir(exist_ok=True)
-        (cache_dir / "grids" / "scene_001.jpg").write_bytes(b"grid")
+    async def test_writes_staging_and_returns_staging_dir(self, monkeypatch, tmp_path: Path):
+        video = tmp_path / "demo.mp4"
+        video.write_bytes(b"fake-video")
+        settings = _settings(tmp_path)
+        staging_dir = get_staging_path("job123", settings)
 
-        extract = Mock(side_effect=AssertionError("should hit cache"))
-        monkeypatch.setattr("structure.services.video.pipeline.extract_metadata", extract)
-
-        result = await structure(
-            StructureCommand(
-                video_path="demo.mp4",
-                scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
-                force=False,
-                frame_grid=False,
-            ),
-            str(video),
-        )
-        assert result.scenes[0].end_frame == 24
-        extract.assert_not_called()
-        assert cache_dir.exists()
-
-    @pytest.mark.asyncio
-    async def test_scenes_mismatch_invalidates_and_recomputes(self, monkeypatch, tmp_path: Path):
-        cached_result = StructureResultDTO(
-            video_hash="hash123",
-            metadata=VideoMetadataSchema(video_path="demo.mp4"),
-            grid_base_path="scenes/hash123/grids/",
-            scenes=[_scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg")],
-        )
-        video, cache_dir = _patch_structure_env(monkeypatch, tmp_path, cached_result=cached_result)
-        (cache_dir / "grids").mkdir(exist_ok=True)
-        (cache_dir / "grids" / "scene_001.jpg").write_bytes(b"old")
-        (cache_dir / "grids" / "scene_099.jpg").write_bytes(b"stale")
-        (cache_dir / "_descriptions.json").write_text("{}", encoding="utf-8")
-        (cache_dir / "_cached.json").write_text("{}", encoding="utf-8")
-
-        # 使用真实 invalidate，验证脏文件被清掉
-        saved = Mock()
+        monkeypatch.setattr("structure.services.video.pipeline.settings", settings)
         monkeypatch.setattr(
-            "structure.services.video.pipeline.save_cached_result",
-            saved,
+            "structure.services.video.pipeline.compute_video_hash",
+            lambda _path: "hash123",
         )
         monkeypatch.setattr(
             "structure.services.video.pipeline.extract_metadata",
-            lambda _path: _metadata(duration=2.0, total_frames=50),
+            lambda _path: _metadata(),
+        )
+
+        extract = Mock(
+            return_value=[
+                (_scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg"), []),
+                (_scene_dto(1, 25, 49, 1.0, 2.0, "scene_002.jpg"), []),
+            ]
+        )
+        monkeypatch.setattr(
+            "structure.services.video.pipeline.extract_scene_grids",
+            extract,
         )
 
         result = await structure(
             StructureCommand(
                 video_path="demo.mp4",
-                scenes=[
-                    _boundary(0, 0, 24, 0.0, 1.0),
-                    _boundary(1, 25, 49, 1.0, 2.0),
-                ],
-                force=False,
-                frame_grid=False,
+                scenes=[_boundary(0, 0, 24, 0.0, 1.0), _boundary(1, 25, 49, 1.0, 2.0)],
+                frame_grid=True,
+                grid_rows=3,
+                grid_cols=3,
+                structure_job_id="job123",
             ),
             str(video),
         )
 
+        assert result.staging_dir == str(staging_dir)
+        assert result.video_hash == "hash123"
         assert len(result.scenes) == 2
-        saved.assert_called_once()
-        # invalidate 会删掉旧目录；save mock 不重建，所以目录应不存在
-        assert not cache_dir.exists()
+        # write_staging 真实执行 → manifest 已落盘
+        assert (staging_dir / "manifest.json").is_file()
+        # frame_extract 的 Mock 返回 grid_image，但 grid 文件是 mock 的，不落盘
+        extract.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_force_invalidates_even_when_scenes_match(self, monkeypatch, tmp_path: Path):
-        cached_result = StructureResultDTO(
-            video_hash="hash123",
-            metadata=VideoMetadataSchema(video_path="demo.mp4"),
-            grid_base_path="scenes/hash123/grids/",
-            scenes=[_scene_dto(0, 0, 24, 0.0, 1.0, "scene_001.jpg")],
-        )
-        video, cache_dir = _patch_structure_env(monkeypatch, tmp_path, cached_result=cached_result)
-        (cache_dir / "_cached.json").write_text("{}", encoding="utf-8")
-        (cache_dir / "_descriptions.json").write_text("{}", encoding="utf-8")
-        (cache_dir / "grids").mkdir(exist_ok=True)
-        (cache_dir / "grids" / "scene_001.jpg").write_bytes(b"old")
+    async def test_requires_structure_job_id(self, monkeypatch, tmp_path: Path):
+        from shared.core.errors.exceptions import ApiException
 
-        saved = Mock()
-        monkeypatch.setattr("structure.services.video.pipeline.save_cached_result", saved)
-
-        result = await structure(
-            StructureCommand(
-                video_path="demo.mp4",
-                scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
-                force=True,
-                frame_grid=False,
-            ),
-            str(video),
+        video = tmp_path / "demo.mp4"
+        video.write_bytes(b"fake-video")
+        monkeypatch.setattr(
+            "structure.services.video.pipeline.settings",
+            _settings(tmp_path),
         )
-        assert len(result.scenes) == 1
-        saved.assert_called_once()
-        assert not cache_dir.exists()
+        monkeypatch.setattr(
+            "structure.services.video.pipeline.compute_video_hash",
+            lambda _path: "hash123",
+        )
+        monkeypatch.setattr(
+            "structure.services.video.pipeline.extract_metadata",
+            lambda _path: _metadata(),
+        )
+
+        with pytest.raises(ApiException):
+            await structure(
+                StructureCommand(
+                    video_path="demo.mp4",
+                    scenes=[_boundary(0, 0, 24, 0.0, 1.0)],
+                    frame_grid=False,
+                ),
+                str(video),
+            )

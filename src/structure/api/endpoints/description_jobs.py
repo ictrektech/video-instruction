@@ -28,20 +28,23 @@ _POLL_PREFIX = "/api/v2/video/describe/jobs"
     "/describe/jobs",
     response_model=ResponseDTO[JobSubmitResponse],
     summary="提交场景描述异步任务",
-    description="传入 video_hash，创建异步场景描述 job，返回 job_id 用于轮询。",
+    description="传入 structure_job_id，创建异步场景描述 job，返回 job_id 用于轮询。",
 )
 async def submit_describe_job(
     command: DescribeSceneCommand,
 ) -> ResponseDTO[JobSubmitResponse]:
     """提交场景描述异步任务。
 
-    相同 video_hash 已有未完成任务（queued/running）时，直接返回现有 job 信息。
+    相同 structure_job_id 已有未完成任务（queued/running）时，直接返回现有 job 信息。
+    去重键用 structure_job_id（存入 jobs.video_hash 列，仅作去重，语义上代表"某份产物"）。
     """
-    video_hash = command.video_hash
+    structure_job_id = command.structure_job_id
 
-    existing = get_pending_job_by_video_hash("describe", video_hash)
+    existing = get_pending_job_by_video_hash("describe", structure_job_id)
     if existing:
-        logger.info("describe job 已存在，复用: id=%s hash=%s", existing, video_hash)
+        logger.info(
+            "describe job 已存在，复用: id=%s structure_job=%s", existing, structure_job_id
+        )
         return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
 
     from structure.services.tasks import run_describe_scenes
@@ -55,12 +58,12 @@ async def submit_describe_job(
         "describe",
         request_data,
         run_describe_scenes.task_class,
-        task_args=(video_hash,),
+        task_args=(structure_job_id,),
         task_kwargs=task_kwargs,
-        video_hash=video_hash,
+        video_hash=structure_job_id,
     )
 
-    logger.info("提交 describe job: id=%s hash=%s", job_id, video_hash)
+    logger.info("提交 describe job: id=%s structure_job=%s", job_id, structure_job_id)
     return ResponseDTO.ok(build_job_submit_response(job_id, _POLL_PREFIX))
 
 

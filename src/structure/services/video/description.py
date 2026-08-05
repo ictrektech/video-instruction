@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
+from shared.jobs import get_job
 from structure.core.settings import Settings
 from structure.schemas.description import (
     SceneDescriptionItem,
@@ -20,18 +21,52 @@ from structure.schemas.description import (
 from structure.schemas.model_config import ModelConfig
 from structure.schemas.video import SceneDTO, WarningDTO
 from structure.services.llm.client import LLMClient, LLMRequestError
-from structure.services.video.cache import get_cache_path, load_cached_result
+from structure.services.video.cache import (
+    DESCRIPTIONS_FILENAME,
+    get_grids_dir,
+    load_manifest,
+    load_scenes,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _descriptions_cache_path(cache_dir: Path) -> Path:
-    return cache_dir / "_descriptions.json"
+def _resolve_staging_dir(structure_job_id: str) -> Path:
+    """从 structure job 的 result_ref 解析 staging 目录绝对路径。"""
+    row = get_job(structure_job_id)
+    if row is None:
+        raise ApiException(
+            BusinessErrorCode.STRUCTURE_JOB_NOT_FOUND,
+            f"structure_job_id={structure_job_id}",
+        )
+    if row["status"] != "succeeded":
+        raise ApiException(
+            BusinessErrorCode.STRUCTURE_JOB_NOT_SUCCEEDED,
+            f"structure_job_id={structure_job_id} status={row['status']}",
+        )
+
+    import json as _json
+
+    try:
+        ref = _json.loads(row["result_ref"]) if row["result_ref"] else {}
+    except (json.JSONDecodeError, TypeError):
+        ref = {}
+    staging_dir = ref.get("staging_dir")
+    if not staging_dir:
+        raise ApiException(
+            BusinessErrorCode.STRUCTURE_JOB_NOT_SUCCEEDED,
+            f"structure_job result_ref 缺少 staging_dir: {structure_job_id}",
+        )
+    return Path(staging_dir)
 
 
-def _load_cached_descriptions(cache_dir: Path) -> SceneDescriptionResult | None:
-    """从缓存中读取已有描述结果"""
-    path = _descriptions_cache_path(cache_dir)
+def _descriptions_path(staging_dir: Path) -> Path:
+    return staging_dir / DESCRIPTIONS_FILENAME
+
+
+def _load_cached_descriptions(staging_dir: Path) -> SceneDescriptionResult | None:
+    """从 staging 目录读取已有描述结果"""
+    path = _descriptions_path(staging_dir)
     if not path.is_file():
         return None
     try:
@@ -43,15 +78,15 @@ def _load_cached_descriptions(cache_dir: Path) -> SceneDescriptionResult | None:
         return None
 
 
-def _save_descriptions(cache_dir: Path, result: SceneDescriptionResult) -> None:
-    """保存描述结果到缓存"""
-    path = _descriptions_cache_path(cache_dir)
-    fd, tmp_path = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+def _save_descriptions(staging_dir: Path, result: SceneDescriptionResult) -> None:
+    """保存描述结果到 staging 目录"""
+    path = _descriptions_path(staging_dir)
+    fd, tmp_path = tempfile.mkstemp(dir=staging_dir, suffix=".tmp")
     try:
         with open(fd, "w", encoding="utf-8") as f:
             json.dump(result.model_dump(), f, ensure_ascii=False, indent=2)
         move(tmp_path, path)
-        logger.info("描述缓存已保存: %s", cache_dir)
+        logger.info("描述已保存: %s", staging_dir)
     except Exception:
         Path(tmp_path).unlink(missing_ok=True)
         raise
@@ -61,56 +96,56 @@ def _descriptions_match_scenes(
     descriptions: SceneDescriptionResult,
     scenes: list[SceneDTO],
 ) -> bool:
-    """描述缓存是否与当前 structure scenes 的 index 集合一致。"""
+    """描述缓存是否与当前 staging scenes 的 index 集合一致。"""
     return {item.scene_index for item in descriptions.descriptions} == {
         scene.scene_index for scene in scenes
     }
 
 
 async def describe_scenes(
-    video_hash: str,
+    structure_job_id: str,
     settings: Settings,
     model_cfg: ModelConfig | None,
     force: bool = False,
 ) -> SceneDescriptionResult:
-    """对指定视频的所有场景进行大模型描述
+    """对指定 structure job 的所有场景进行大模型描述
 
     流程：
-    1. 查找场景缓存，确认视频已结构化
-    2. 如果已有描述缓存且与当前 scenes 对齐、非 force，直接返回
-    3. 并发对各场景图片调用 LLM
-    4. 保存描述缓存并返回
+    1. 通过 structure job 的 result_ref 找到 staging 目录
+    2. 从 staging manifest 恢复 scenes，读取九宫格图片
+    3. 如果已有描述且与当前 scenes 对齐、非 force，直接返回
+    4. 并发对各场景图片调用 LLM
+    5. 将描述写入 staging 目录的 descriptions.json
 
     Args:
-        video_hash: 视频内容哈希
-        settings: 服务配置
-        llm_config: 大模型配置
-        force: 是否强制重新描述（忽略缓存）
+        structure_job_id: 对应 structure job ID（其成功产物在 staging 目录）。
+        settings: 服务配置。
+        model_cfg: 大模型配置。
+        force: 是否强制重新描述（忽略已有描述）。
 
     Returns:
         场景描述结果
-
-    Raises:
-        ApiException: 场景缓存未找到时抛出
     """
-    cache_dir = get_cache_path(video_hash, settings)
+    # 1. 定位 staging 目录
+    staging_dir = _resolve_staging_dir(structure_job_id)
 
-    # 1. 查找场景缓存
-    cached_result = load_cached_result(cache_dir, settings.cache_base_path)
-    if cached_result is None:
+    # 2. 从 manifest 恢复场景
+    manifest = load_manifest(staging_dir)
+    if manifest is None:
         raise ApiException(BusinessErrorCode.VIDEO_SCENE_CACHE_MISS)
+    scenes = load_scenes(staging_dir)
+    video_hash = manifest.get("video_hash", "")
 
-    # 2. 检查描述缓存（需与当前 structure scenes 对齐）
-    scenes = cached_result.scenes
+    # 3. 检查已有描述（需与当前 scenes 对齐）
     if not force:
-        cached_descriptions = _load_cached_descriptions(cache_dir)
+        cached_descriptions = _load_cached_descriptions(staging_dir)
         if cached_descriptions is not None and _descriptions_match_scenes(
             cached_descriptions, scenes
         ):
             return cached_descriptions
 
-    # 3. 构造图片路径 & 并发描述
-    grids_dir = cache_dir / "grids"
+    # 4. 构造图片路径 & 并发描述
+    grids_dir = get_grids_dir(staging_dir)
 
     if model_cfg is None:
         raise ApiException(BusinessErrorCode.COMMON_INVALID_ARGUMENT, "缺少大模型配置")
@@ -193,17 +228,18 @@ async def describe_scenes(
     results.sort(key=lambda x: x.scene_index)
 
     result = SceneDescriptionResult(
+        structure_job_id=structure_job_id,
         video_hash=video_hash,
         descriptions=results,
         warnings=warnings,
     )
 
-    # 5. 保存缓存
-    _save_descriptions(cache_dir, result)
+    # 5. 保存描述
+    _save_descriptions(staging_dir, result)
 
     logger.info(
-        "场景描述完成: video_hash=%s, scenes=%d, elapsed=%.2fs",
-        video_hash,
+        "场景描述完成: structure_job_id=%s, scenes=%d, elapsed=%.2fs",
+        structure_job_id,
         len(results),
         elapsed,
     )

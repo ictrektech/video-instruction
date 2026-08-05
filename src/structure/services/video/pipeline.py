@@ -18,11 +18,8 @@ from structure.schemas.video import (
     WarningDTO,
 )
 from structure.services.video.cache import (
-    get_cache_path,
-    invalidate_cache_dir,
-    load_cached_result,
-    save_cached_result,
-    scenes_match,
+    get_staging_path,
+    write_staging,
 )
 from structure.services.video.frame_extract import (
     extract_scene_grids,
@@ -38,12 +35,14 @@ async def structure(
     video_path: str,
     work_dir: str | None = None,
 ) -> StructureResultDTO:
-    """视频结构化入口：提取元数据 → 九宫格生成。
+    """视频结构化入口：提取元数据 → 九宫格生成 → 写入 staging。
 
     scenes 必须通过 API 传入，由 scene-detection 服务提供。
+    产物写入 ``<staging_base>/<structure_job_id>/``，上游轮询到 job succeeded 后
+    将整个目录 ``mv`` 到自己的数据目录。本服务不维护跨请求缓存。
 
     Args:
-        cmd: 结构化请求参数。
+        cmd: 结构化请求参数（需含 structure_job_id 作为 staging 目录名）。
         video_path: 视频文件绝对路径。
         work_dir: 工作目录，默认使用 ``settings.video_work_dir``。
     """
@@ -57,6 +56,12 @@ async def structure(
             "缺少场景边界，请先调用 scene-detection 服务获取场景信息",
         )
 
+    if not cmd.structure_job_id:
+        raise ApiException(
+            BusinessErrorCode.COMMON_INVALID_ARGUMENT,
+            "缺少 structure_job_id，无法确定 staging 目录",
+        )
+
     work_dir = work_dir or settings.video_work_dir
     Path(work_dir).mkdir(parents=True, exist_ok=True)
     call_work_dir = Path(tempfile.mkdtemp(dir=work_dir))
@@ -65,33 +70,22 @@ async def structure(
     stage_timings: dict[str, float] = {}
     warnings: list[WarningDTO] = []
 
-    # ── Step 0: 计算视频 hash 并尝试缓存命中 ────────────────────────
+    # ── Step 1: 视频身份 hash（用于 metadata / manifest 元数据）───────────
     video_hash = await asyncio.to_thread(compute_video_hash, video_path)
-    cache_dir = get_cache_path(video_hash, settings)
-    if not cmd.force and cache_dir.is_dir():
-        cached = await asyncio.to_thread(load_cached_result, cache_dir, settings.cache_base_path)
-        if cached is not None and scenes_match(cmd.scenes, cached.scenes):
-            cached.elapsed_sec = round(time.time() - started_at, 2)
-            cached.stage_timings["total"] = cached.elapsed_sec
-            logger.info("缓存命中: %s", video_path)
-            return cached
-        logger.info("缓存未命中，重新处理: %s", cache_dir)
 
-    # miss / force：清旧产物，避免残留 grid 与过期描述
-    await asyncio.to_thread(invalidate_cache_dir, cache_dir)
-
-    # ── Step 1: 提取元数据 ──────────────────────────────────────────
+    # ── Step 2: 提取元数据 ──────────────────────────────────────────────
     t0 = time.time()
     metadata = await asyncio.to_thread(extract_metadata, video_path)
     stage_timings["metadata"] = round(time.time() - t0, 3)
 
-    # ── Step 2: 场景边界（从 API 传入）────────────────────────────────
+    # ── Step 3: 场景边界（从 API 传入）───────────────────────────────────
     scene_bounds: list[tuple[int, int, float, float]] = [
         (s.start_frame, s.end_frame, s.start_time, s.end_time) for s in cmd.scenes
     ]
     logger.info("使用 API 传入的场景边界: %d 个场景", len(scene_bounds))
 
-    # ── Step 3: 九宫格生成 ──────────────────────────────────────────
+    # ── Step 4: 九宫格生成 → 写入 staging ────────────────────────────────
+    staging_dir = get_staging_path(cmd.structure_job_id, settings)
     scenes: list[SceneDTO] = []
     if cmd.frame_grid and scene_bounds:
         t0 = time.time()
@@ -104,7 +98,7 @@ async def structure(
             settings.video_grid_tile_max_height,
             cmd.grid_rows,
             cmd.grid_cols,
-            cache_dir,
+            staging_dir,  # grid 图片直接写入 staging/grids/
         )
         for grid_item, _warnings in grid_results:
             scenes.append(grid_item)
@@ -129,27 +123,17 @@ async def structure(
             has_audio=metadata["has_audio"],
             total_frames=metadata["total_frames"],
         ),
-        grid_base_path=f"{settings.video_scenes_dir}/{video_hash}/grids/",
+        staging_dir=str(staging_dir),
         scenes=scenes,
         warnings=warnings,
         stage_timings=stage_timings,
         elapsed_sec=elapsed_sec,
     )
 
-    # ── Step 4: 写入缓存（fire-and-forget）───────────────────────────
+    # ── Step 5: 写入 staging（manifest + metadata + grids）───────────────
     try:
-        await asyncio.to_thread(save_cached_result, cache_dir, result)
+        await asyncio.to_thread(write_staging, staging_dir, result)
     except Exception as exc:
-        logger.warning("缓存写入失败: %s", exc)
+        logger.warning("staging 写入失败: %s", exc)
 
     return result
-
-
-async def clear_cache(video_path: str) -> None:
-    """计算视频 SHA-256 并删除对应的缓存目录。"""
-    video_hash = await asyncio.to_thread(compute_video_hash, video_path)
-    cache_dir = get_cache_path(video_hash, settings)
-    if not cache_dir.is_dir():
-        logger.info("无缓存可清除: %s", video_hash)
-        raise ApiException(BusinessErrorCode.VIDEO_CACHE_NOT_FOUND)
-    await asyncio.to_thread(invalidate_cache_dir, cache_dir)

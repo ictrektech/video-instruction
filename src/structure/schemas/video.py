@@ -19,9 +19,9 @@ class StructureCommand(BaseModel):
         description="场景边界列表，由 scene-detection 服务提供"
     )
     frame_grid: bool = Field(default=True, description="是否生成场景拼图")
-    force: bool = Field(default=False, description="强制重新结构化，忽略缓存")
     grid_rows: int = Field(default=3, description="场景图片拼接行数")
     grid_cols: int = Field(default=3, description="场景图片拼接列数")
+    structure_job_id: str = Field(default="", description="structure job ID，用作 staging 目录名")
 
 
 class CacheClearCommand(BaseModel):
@@ -70,9 +70,9 @@ class StructureResultDTO(BaseModel):
 
     video_hash: str = Field(description="视频内容哈希（MD5）")
     metadata: VideoMetadataSchema = Field(description="视频元数据")
-    grid_base_path: str = Field(
+    staging_dir: str = Field(
         default="",
-        description="九宫格图片基础路径(相对于 cache_base_path)，与 scene.grid_image 拼接",
+        description="本 job 产物暂存目录绝对路径，上游将其整体移动到自己的数据目录",
     )
     scenes: list[SceneDTO] = Field(description="场景列表")
     warnings: list[WarningDTO] = Field(default_factory=list, description="警告信息")

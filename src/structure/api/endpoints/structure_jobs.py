@@ -73,7 +73,6 @@ async def submit_structure_job(
         "scenes": scenes_data,
         "detect_job_id": req.detect_job_id,
         "frame_grid": req.frame_grid,
-        "force": req.force,
         "grid_rows": req.grid_rows,
         "grid_cols": req.grid_cols,
     }

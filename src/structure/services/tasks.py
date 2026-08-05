@@ -12,8 +12,6 @@ import time
 from logging import getLogger
 
 from shared.jobs import get_job, huey, update_job
-from structure.core.settings import settings as struct_settings
-from structure.services.video.cache import get_cache_path
 
 logger = getLogger(__name__)
 
@@ -43,7 +41,6 @@ def run_structure(
     scenes: list[dict] | None = None,
     detect_job_id: str | None = None,
     frame_grid: bool = True,
-    force: bool = False,
     grid_rows: int = 3,
     grid_cols: int = 3,
     task=None,  # injected by context=True
@@ -51,12 +48,11 @@ def run_structure(
     """Huey 任务：执行视频结构化并更新 jobs 状态。
 
     Args:
-        job_id: jobs 表主键。
+        job_id: jobs 表主键（同时用作 staging 目录名）。
         video_path: 视频绝对路径。
         scenes: 直接传入的场景列表。
         detect_job_id: 引用的 scene-detect job ID（与 scenes 二选一）。
         frame_grid: 是否生成九宫格。
-        force: 是否强制重新结构化。
         grid_rows: 九宫格行数。
         grid_cols: 九宫格列数。
         task: Huey Task 实例（由 context=True 注入）。
@@ -82,9 +78,9 @@ def run_structure(
             video_path=video_path,
             scenes=[SceneBoundaryInput(**s) for s in resolved_scenes],
             frame_grid=frame_grid,
-            force=force,
             grid_rows=grid_rows,
             grid_cols=grid_cols,
+            structure_job_id=job_id,
         )
 
         # 调用 pipeline
@@ -92,12 +88,10 @@ def run_structure(
 
         result = asyncio.run(video_pipeline.structure(cmd, video_path))
 
-        # 构建 result_ref
-        cache_dir_path = str(get_cache_path(result.video_hash, struct_settings))
+        # 构建 result_ref（describe 通过它定位 staging 目录）
         ref_data = {
             "video_hash": result.video_hash,
-            "cache_dir": cache_dir_path,
-            "cached_json": f"{cache_dir_path}/_cached.json",
+            "staging_dir": result.staging_dir,
         }
 
         finished_at = int(time.time())
@@ -134,7 +128,7 @@ def run_structure(
 @huey.task(context=True)
 def run_describe_scenes(
     job_id: str,
-    video_hash: str,
+    structure_job_id: str,
     *,
     force: bool = False,
     model_cfg: dict | None = None,
@@ -144,7 +138,7 @@ def run_describe_scenes(
 
     Args:
         job_id: jobs 表主键。
-        video_hash: 视频内容哈希。
+        structure_job_id: 对应 structure job ID（describe 按其 staging 目录读取 grids）。
         force: 是否强制重新描述。
         model_cfg: 大模型配置 dict（ModelConfig.model_dump()），None 则使用服务端默认。
         task: Huey Task 实例（由 context=True 注入）。
@@ -163,7 +157,7 @@ def run_describe_scenes(
         cfg = ModelConfig(**model_cfg) if model_cfg else None
         result = asyncio.run(
             description_service.describe_scenes(
-                video_hash=video_hash,
+                structure_job_id=structure_job_id,
                 settings=struct_settings,
                 model_cfg=cfg,
                 force=force,
@@ -179,9 +173,9 @@ def run_describe_scenes(
         )
 
         logger.info(
-            "describe 完成: job=%s hash=%s scenes=%d elapsed=%ds",
+            "describe 完成: job=%s structure_job=%s scenes=%d elapsed=%ds",
             job_id,
-            video_hash,
+            structure_job_id,
             len(result.descriptions),
             finished_at - started_at,
         )

@@ -1,232 +1,216 @@
+"""结构化产物暂存（staging）管理。
+
+structure 服务无状态：每个 job 的产物写进独立 staging 目录
+``<staging_base>/<structure_job_id>/``，上游轮询到 job succeeded 后把整个目录
+``mv`` 到自己的数据目录。服务端不维护跨请求持久缓存、不管理资产状态。
+"""
+
 from __future__ import annotations
 
 import json
 import shutil
 import tempfile
-from collections.abc import Sequence
+import time
 from logging import getLogger
 from pathlib import Path
 from typing import Any
 
 from structure.core.settings import Settings
-from structure.schemas.video import SceneDTO, StructureResultDTO, VideoMetadataSchema, WarningDTO
+from structure.schemas.video import (
+    SceneDTO,
+    StructureResultDTO,
+    VideoMetadataSchema,
+    WarningDTO,
+)
 
 logger = getLogger(__name__)
 
-
-def _scenes_cache_root(settings: Settings) -> Path:
-    """返回 scenes 缓存的根目录。"""
-    return Path(settings.cache_base_path) / settings.video_scenes_dir
-
-
-def get_cache_path(video_hash: str, settings: Settings) -> Path:
-    """返回 `<cache_base_path>/scenes/<hash>/` 目录。"""
-    return _scenes_cache_root(settings) / video_hash
+# manifest 文件名（产物目录内）
+MANIFEST_FILENAME = "manifest.json"
+METADATA_FILENAME = "metadata.json"
+GRIDS_DIRNAME = "grids"
+DESCRIPTIONS_FILENAME = "descriptions.json"
 
 
-def _grids_dir(cache_dir: Path) -> Path:
-    return cache_dir / "grids"
+def get_staging_path(job_id: str, settings: Settings) -> Path:
+    """返回 ``<staging_base>/<job_id>/`` 目录。"""
+    return Path(settings.staging_base_path) / job_id
 
 
-def _cached_json_path(cache_dir: Path) -> Path:
-    return cache_dir / "_cached.json"
+def get_manifest_path(staging_dir: Path) -> Path:
+    return staging_dir / MANIFEST_FILENAME
 
 
-# ── 缓存序列化 ──────────────────────────────────────────────────────────
+def get_grids_dir(staging_dir: Path) -> Path:
+    return staging_dir / GRIDS_DIRNAME
 
 
-class _CachedData:
-    """`_cached.json` 的序列化结构。"""
-
-    def __init__(
-        self,
-        cache_version: int,
-        video_hash: str,
-        grid_base_path: str,
-        metadata: VideoMetadataSchema,
-        scenes: list[dict],
-        warnings: list[dict],
-        stage_timings: dict[str, float],
-        elapsed_sec: float,
-    ):
-        self.cache_version = cache_version
-        self.video_hash = video_hash
-        self.grid_base_path = grid_base_path
-        self.metadata = metadata
-        self.scenes = scenes
-        self.warnings = warnings
-        self.stage_timings = stage_timings
-        self.elapsed_sec = elapsed_sec
-
-    def to_dict(self) -> dict:
-        return {
-            "cache_version": self.cache_version,
-            "video_hash": self.video_hash,
-            "grid_base_path": self.grid_base_path,
-            "metadata": self.metadata.model_dump(),
-            "scenes": self.scenes,
-            "warnings": self.warnings,
-            "stage_timings": self.stage_timings,
-            "elapsed_sec": self.elapsed_sec,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> _CachedData:
-        return cls(
-            cache_version=data["cache_version"],
-            video_hash=data["video_hash"],
-            grid_base_path=data.get("grid_base_path", ""),
-            metadata=VideoMetadataSchema(**data["metadata"]),
-            scenes=data["scenes"],
-            warnings=data["warnings"],
-            stage_timings=data.get("stage_timings", {}),
-            elapsed_sec=data.get("elapsed_sec", 0.0),
-        )
+# ── manifest 构建 ──────────────────────────────────────────────────────────
 
 
-_CURRENT_CACHE_VERSION = 2
+def build_manifest(result: StructureResultDTO) -> dict[str, Any]:
+    """将结构化结果序列化为 ``manifest.json`` 内容。
 
-
-def _scene_to_cached_dict(scene: SceneDTO) -> dict:
+    manifest 记录视频身份（hash）、场景边界与九宫格、各阶段耗时，供上游归档审计。
+    仅作元数据，不参与命名或去重。
+    """
     return {
-        "scene_id": scene.scene_id,
-        "scene_index": scene.scene_index,
-        "start_time": scene.start_time,
-        "end_time": scene.end_time,
-        "start_frame": scene.start_frame,
-        "end_frame": scene.end_frame,
-        "grid_image": scene.grid_image,
+        "version": 1,
+        "video_hash": result.video_hash,
+        "metadata": result.metadata.model_dump(),
+        "scenes": [
+            {
+                "scene_id": s.scene_id,
+                "scene_index": s.scene_index,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "start_frame": s.start_frame,
+                "end_frame": s.end_frame,
+                "grid_image": s.grid_image,
+            }
+            for s in result.scenes
+        ],
+        "warnings": [w.model_dump() for w in result.warnings],
+        "stage_timings": result.stage_timings,
+        "elapsed_sec": result.elapsed_sec,
+        "created_at": int(time.time()),
     }
 
 
-def _scene_from_cached_dict(data: dict) -> SceneDTO:
-    return SceneDTO(
-        scene_id=data["scene_id"],
-        scene_index=data.get("scene_index", 0),
-        start_time=data["start_time"],
-        end_time=data["end_time"],
-        start_frame=data["start_frame"],
-        end_frame=data["end_frame"],
-        grid_image=data.get("grid_image"),
-    )
+# ── 写入 staging ──────────────────────────────────────────────────────────
 
 
-# ── 读写缓存 ──────────────────────────────────────────────────────────
-
-
-def load_cached_result(
-    cache_dir: Path,
-    cache_base_path: str | Path | None = None,
-) -> StructureResultDTO | None:
-    """从缓存目录加载完整结果。"""
-    json_path = _cached_json_path(cache_dir)
-    if not json_path.is_file():
-        return None
-
-    try:
-        with open(json_path, encoding="utf-8") as f:
-            raw = json.load(f)
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("缓存元数据损坏，重新处理: %s", exc)
-        return None
-
-    try:
-        cached = _CachedData.from_dict(raw)
-    except (KeyError, TypeError) as exc:
-        logger.warning("缓存元数据格式异常，重新处理: %s", exc)
-        return None
-
-    if cached.cache_version != _CURRENT_CACHE_VERSION:
-        logger.warning(
-            "缓存版本不匹配 (%s != %s)，重新处理", cached.cache_version, _CURRENT_CACHE_VERSION
-        )
-        return None
-
-    scenes: list[SceneDTO] = []
-    for scene_data in cached.scenes:
-        grid_image = scene_data.get("grid_image")
-        if grid_image and cache_base_path:
-            grid_abs = Path(cache_base_path) / cached.grid_base_path / grid_image
-            if not grid_abs.is_file():
-                logger.warning(
-                    "场景 %d 的 grid 图片缺失，缓存失效", scene_data.get("scene_index", 0)
-                )
-                return None
-
-        scenes.append(_scene_from_cached_dict(scene_data))
-
-    warnings = [WarningDTO(**w) for w in cached.warnings]
-
-    return StructureResultDTO(
-        video_hash=cached.video_hash,
-        metadata=cached.metadata,
-        grid_base_path=cached.grid_base_path,
-        scenes=scenes,
-        warnings=warnings,
-        stage_timings=cached.stage_timings,
-        elapsed_sec=cached.elapsed_sec,
-    )
-
-
-def save_cached_result(
-    cache_dir: Path,
+def write_staging(
+    staging_dir: Path,
     result: StructureResultDTO,
+    *,
+    grids_dir_src: Path | None = None,
 ) -> None:
-    """保存结构化结果到缓存。"""
-    grids_path = _grids_dir(cache_dir)
-    grids_path.mkdir(parents=True, exist_ok=True)
+    """将结构化结果写入 staging 目录。
 
-    cached_data = _CachedData(
-        cache_version=_CURRENT_CACHE_VERSION,
-        video_hash=result.video_hash,
-        grid_base_path=result.grid_base_path,
-        metadata=result.metadata,
-        scenes=[_scene_to_cached_dict(s) for s in result.scenes],
-        warnings=[w.model_dump() for w in result.warnings],
-        stage_timings=result.stage_timings,
-        elapsed_sec=result.elapsed_sec,
-    )
+    - 若 ``grids_dir_src`` 提供（grid 图片暂存于工作目录），将其移入 staging/grids。
+    - 写入 ``manifest.json``（原子写，先临时文件再 rename）。
+    - ``metadata.json`` 与 manifest 内容冗余，但便于上游直接读取，仍保留。
 
-    json_path = _cached_json_path(cache_dir)
-    fd, tmp_path = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+    成功后 staging 目录即为上游可整体 ``mv`` 的完整产物。
+    """
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. grids：从工作目录移入（若本 job 生成过）
+    if grids_dir_src is not None and grids_dir_src.is_dir():
+        grids_dst = get_grids_dir(staging_dir)
+        grids_dst.mkdir(parents=True, exist_ok=True)
+        for grid_file in sorted(grids_dir_src.iterdir()):
+            if grid_file.is_file():
+                shutil.move(str(grid_file), str(grids_dst / grid_file.name))
+
+    # 2. metadata.json
+    _atomic_write_json(staging_dir / METADATA_FILENAME, result.metadata.model_dump())
+
+    # 3. manifest.json（最后写，作为产物完整性的标志）
+    _atomic_write_json(get_manifest_path(staging_dir), build_manifest(result))
+
+    logger.info("staging 已写入: %s", staging_dir)
+
+
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
+    """原子写 JSON：先写临时文件再 rename，避免读到半成品。"""
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         with open(fd, "w", encoding="utf-8") as f:
-            json.dump(cached_data.to_dict(), f, ensure_ascii=False, indent=2)
-        shutil.move(tmp_path, json_path)
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        shutil.move(tmp_path, path)
     except Exception:
         Path(tmp_path).unlink(missing_ok=True)
         raise
 
-    logger.info("缓存已保存: %s", cache_dir)
+
+# ── 读取 staging（供 describe 复用同一产物目录）─────────────────────────
 
 
-def invalidate_cache_dir(cache_dir: Path) -> None:
-    """删除结构缓存目录（_cached.json / grids / _descriptions.json）。"""
-    if cache_dir.is_dir():
-        shutil.rmtree(cache_dir)
-        logger.info("结构缓存已清理: %s", cache_dir)
+def load_manifest(staging_dir: Path) -> dict[str, Any] | None:
+    """读取 staging 目录的 manifest.json。"""
+    path = get_manifest_path(staging_dir)
+    if not path.is_file():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("manifest 读取失败: %s (%s)", path, exc)
+        return None
 
 
-def clear_cache(video_hash: str, settings: Settings) -> None:
-    """按 video_hash 删除对应缓存目录。"""
-    invalidate_cache_dir(get_cache_path(video_hash, settings))
-
-
-def scenes_match(request_scenes: Sequence[Any], cached_scenes: Sequence[Any]) -> bool:
-    """请求 scenes 与缓存 scenes 边界是否完全一致。
-
-    兼容请求侧 ``SceneBoundaryInput`` 与缓存侧 ``SceneDTO``。
-    """
-
-    def _key(scenes: Sequence[Any]) -> tuple[tuple[int, int, float, float], ...]:
-        return tuple(
-            (
-                int(scene.start_frame),
-                int(scene.end_frame),
-                round(float(scene.start_time), 6),
-                round(float(scene.end_time), 6),
+def load_scenes(staging_dir: Path) -> list[SceneDTO]:
+    """从 manifest 恢复场景列表（供 describe 读取 grids）。"""
+    manifest = load_manifest(staging_dir)
+    if manifest is None:
+        return []
+    scenes: list[SceneDTO] = []
+    for scene_data in manifest.get("scenes", []):
+        scenes.append(
+            SceneDTO(
+                scene_id=scene_data["scene_id"],
+                scene_index=scene_data.get("scene_index", 0),
+                start_time=scene_data["start_time"],
+                end_time=scene_data["end_time"],
+                start_frame=scene_data["start_frame"],
+                end_frame=scene_data["end_frame"],
+                grid_image=scene_data.get("grid_image"),
             )
-            for scene in scenes
         )
+    return scenes
 
-    return _key(request_scenes) == _key(cached_scenes)
+
+def load_metadata(staging_dir: Path) -> VideoMetadataSchema | None:
+    """从 manifest 恢复视频元数据。"""
+    manifest = load_manifest(staging_dir)
+    if manifest is None or not manifest.get("metadata"):
+        return None
+    return VideoMetadataSchema(**manifest["metadata"])
+
+
+def load_warnings(staging_dir: Path) -> list[WarningDTO]:
+    """从 manifest 恢复警告列表。"""
+    manifest = load_manifest(staging_dir)
+    if manifest is None:
+        return []
+    return [WarningDTO(**w) for w in manifest.get("warnings", [])]
+
+
+# ── TTL 清理（卫生，非缓存）───────────────────────────────────────────────
+
+
+def cleanup_expired_staging(
+    settings: Settings,
+    now: int | None = None,
+) -> int:
+    """清理超过 ``staging_ttl_sec`` 未被搬走的 staging 目录。
+
+    上游没搬 = 任务失败 / 被丢弃，产物不再被认领。只删无人认领的过期目录，
+    不碰正在被上游 ``mv`` 的目录（rename 原子，删除器和搬移器不冲突）。
+    """
+    ttl = settings.staging_ttl_sec
+    if ttl <= 0:
+        return 0
+
+    root = Path(settings.staging_base_path)
+    if not root.is_dir():
+        return 0
+
+    now = now if now is not None else int(time.time())
+    deadline = now - ttl
+    removed = 0
+
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < deadline:
+                shutil.rmtree(entry)
+                removed += 1
+                logger.info("staging TTL 清理: %s", entry)
+        except OSError as exc:
+            logger.warning("staging 清理失败 %s: %s", entry, exc)
+
+    return removed

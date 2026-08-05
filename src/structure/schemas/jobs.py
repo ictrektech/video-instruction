@@ -22,6 +22,5 @@ class StructureJobRequest(BaseModel):
 
     # StructureCommand 参数
     frame_grid: bool = Field(default=True, description="是否生成场景拼图")
-    force: bool = Field(default=False, description="强制重新结构化")
     grid_rows: int = Field(default=3, description="场景图片拼接行数")
     grid_cols: int = Field(default=3, description="场景图片拼接列数")

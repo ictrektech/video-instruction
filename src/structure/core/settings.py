@@ -15,17 +15,18 @@ class Settings(BaseSettings):
     cors_origins: str = Field("*", description="CORS 允许的源，多个用逗号分隔")
 
     data_base_path: str = Field("/data", description="视频文件基础路径前缀（相对路径模式）")
-    cache_base_path: str = Field(
-        "/data/video-structure-cache", description="结构化输出缓存根目录（与输入解耦）"
+    staging_base_path: str = Field(
+        "/data/video-structure-cache",
+        description="结构化产物暂存根目录（共享卷，上游搬走后即归上游所有）",
+    )
+    staging_ttl_sec: int = Field(
+        6 * 3600,
+        description="staging 目录 TTL 秒数；超过该时间未被上游搬走的产物会被清理",
     )
     video_work_dir: str = Field("/tmp/video-structured", description="视频处理临时工作目录")  # noqa: S108
     video_grid_tile_max_height: int = Field(360, description="九宫格单 tile 最大高度(像素)")
     video_grid_ffmpeg_threads: int = Field(
         0, description="九宫格取帧 ffmpeg -threads；0=auto，1=保守"
-    )
-    video_scenes_dir: str = Field(
-        "scenes",
-        description="场景缓存持久化子目录名，相对于 cache_base_path",
     )
 
     # ── 大模型描述 ────────────────────────────────────────────

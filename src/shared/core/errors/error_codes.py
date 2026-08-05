@@ -29,3 +29,5 @@ class BusinessErrorCode(ErrorCodeMixin):
     VIDEO_DESCRIPTION_LLM_ERROR = (70103, "大模型调用失败: {}")
     VIDEO_SCENE_CACHE_MISS = (70104, "视频场景缓存未找到，请先结构化")
     JOB_NOT_FOUND = (70201, "任务不存在: {}")
+    STRUCTURE_JOB_NOT_FOUND = (70202, "structure 任务不存在: {}")
+    STRUCTURE_JOB_NOT_SUCCEEDED = (70203, "structure 任务未成功或缺少 staging_dir: {}")

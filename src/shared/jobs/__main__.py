@@ -9,6 +9,9 @@
 
     # 同时清理 Huey 过期结果
     python -m shared.jobs cleanup --sweep-results
+
+    # 同时清理 structure 未搬走的 staging 产物（TTL 默认 settings.staging_ttl_sec）
+    python -m shared.jobs cleanup --structure-staging
 """
 
 from __future__ import annotations
@@ -32,6 +35,11 @@ def main() -> None:
         "--max-age", type=int, default=None, help="TTL 天数（默认 settings.job_ttl_days）"
     )
     cl.add_argument("--sweep-results", action="store_true", help="同时清理 Huey 过期结果")
+    cl.add_argument(
+        "--structure-staging",
+        action="store_true",
+        help="同时清理 structure 超过 TTL 未被搬走的 staging 产物",
+    )
 
     args = parser.parse_args()
 
@@ -45,6 +53,13 @@ def main() -> None:
 
             swept = huey.storage.sweep_results()
             logger.info(f"Huey 结果清理: 删除了 {swept} 条过期结果")
+
+        if args.structure_staging:
+            from structure.core.settings import settings as struct_settings
+            from structure.services.video.cache import cleanup_expired_staging
+
+            removed = cleanup_expired_staging(struct_settings)
+            logger.info(f"structure staging 清理: 删除了 {removed} 个目录")
 
 
 if __name__ == "__main__":
