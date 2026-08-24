@@ -42,7 +42,7 @@ help:  ## 显示帮助
 dev:       ## [Dev] 启动服务（加 OPTS=-d 后台运行）
 	$(DEV_CMD) --profile detection --profile structure up $(OPTS)
 dev-down:  ## [Dev] 停止服务
-	$(DEV_CMD) down
+	$(DEV_CMD) --profile detection --profile structure down
 dev-logs:  ## [Dev] 查看日志
 	$(DEV_CMD) --profile detection --profile structure logs -f
 dev-build: ## [Dev] 构建镜像
