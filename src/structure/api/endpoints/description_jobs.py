@@ -42,9 +42,7 @@ async def submit_describe_job(
 
     existing = get_pending_job_by_video_hash("describe", structure_job_id)
     if existing:
-        logger.info(
-            "describe job 已存在，复用: id=%s structure_job=%s", existing, structure_job_id
-        )
+        logger.info("describe job 已存在，复用: id=%s structure_job=%s", existing, structure_job_id)
         return ResponseDTO.ok(build_job_submit_response(existing, _POLL_PREFIX))
 
     from structure.services.tasks import run_describe_scenes
