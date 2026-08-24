@@ -11,6 +11,7 @@ import json
 import shutil
 import tempfile
 import time
+import uuid
 from logging import getLogger
 from pathlib import Path
 from typing import Any
@@ -204,6 +205,11 @@ def cleanup_expired_staging(
 
     for entry in root.iterdir():
         if not entry.is_dir():
+            continue
+        # 只清理 job_id 形态的目录，避免误删 staging 根目录下的非 job 目录
+        try:
+            uuid.UUID(entry.name)
+        except ValueError:
             continue
         try:
             if entry.stat().st_mtime < deadline:

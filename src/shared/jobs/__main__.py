@@ -7,9 +7,6 @@
     # 指定 TTL 天数
     python -m shared.jobs cleanup --max-age 14
 
-    # 同时清理 Huey 过期结果
-    python -m shared.jobs cleanup --sweep-results
-
     # 同时清理 structure 未搬走的 staging 产物（TTL 默认 settings.staging_ttl_sec）
     python -m shared.jobs cleanup --structure-staging
 """
@@ -19,7 +16,7 @@ from __future__ import annotations
 import argparse
 from logging import getLogger
 
-from shared.jobs import init_db
+from shared.jobs import _has_pending_describe, init_db
 from shared.jobs.models import cleanup_expired_jobs
 
 logger = getLogger(__name__)
@@ -34,7 +31,6 @@ def main() -> None:
     cl.add_argument(
         "--max-age", type=int, default=None, help="TTL 天数（默认 settings.job_ttl_days）"
     )
-    cl.add_argument("--sweep-results", action="store_true", help="同时清理 Huey 过期结果")
     cl.add_argument(
         "--structure-staging",
         action="store_true",
@@ -48,18 +44,13 @@ def main() -> None:
         deleted = cleanup_expired_jobs(max_age_days=args.max_age)
         logger.info(f"jobs 表清理: 删除了 {deleted} 行")
 
-        if args.sweep_results:
-            from shared.jobs.huey import huey
-
-            swept = huey.storage.sweep_results()
-            logger.info(f"Huey 结果清理: 删除了 {swept} 条过期结果")
-
         if args.structure_staging:
             from structure.core.settings import settings as struct_settings
             from structure.services.video.cache import cleanup_expired_staging
 
-            removed = cleanup_expired_staging(struct_settings)
-            logger.info(f"structure staging 清理: 删除了 {removed} 个目录")
+            if not _has_pending_describe():
+                removed = cleanup_expired_staging(struct_settings)
+                logger.info(f"structure staging 清理: 删除了 {removed} 个目录")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
 - get_pending_job_by_video_hash() — 按 video_hash 查未完成任务（去重）
 - build_job_submit_response()     — 统一提交响应
 - build_job_status_response()     — 统一状态查询响应
-- cleanup_expired()               — TTL 清理
+- cleanup_expired_jobs()          — TTL 清理
 - huey                            — 全局 SqliteHuey 实例
 
 用法：
@@ -31,19 +31,19 @@ import json
 import uuid
 from logging import getLogger
 
+from huey import crontab
+
 from shared.jobs.huey import huey
 from shared.jobs.models import (
     SQL_INSERT_JOB,
     _db,
     _now,
+    cleanup_expired_jobs,
     create_job,
     get_job,
     get_pending_job_by_video_hash,
     init_db,
     update_job,
-)
-from shared.jobs.models import (
-    cleanup_expired_jobs as cleanup_expired,
 )
 from shared.jobs.schemas import JobErrorDTO, JobStatusResponse, JobSubmitResponse
 from shared.utils.system import limit_opencv_threads
@@ -61,7 +61,7 @@ __all__ = [
     "update_job",
     "enqueue_job",
     "run_worker",
-    "cleanup_expired",
+    "cleanup_expired_jobs",
 ]
 
 
@@ -168,6 +168,41 @@ def cleanup_stale_log_fds() -> None:
             continue
 
 
+# ── worker 内 TTL 清理（Huey periodic_task）───────────────────────────
+
+
+def _has_pending_describe() -> bool:
+    """是否存在 queued/running describe（有则跳过 staging 清理）。"""
+    with _db()(commit=True) as curs:
+        row = curs.execute(
+            "SELECT 1 FROM jobs "
+            "WHERE job_type = 'describe' AND status IN ('queued', 'running') "
+            "LIMIT 1"
+        ).fetchone()
+        return row is not None
+
+
+def _cleanup_expired() -> None:
+    """在 worker 内执行一次 jobs/staging/kv TTL 清理。"""
+
+    # 清理过期的 jobs 表
+    cleanup_expired_jobs()
+
+    from structure.core.settings import settings as structure_settings
+    from structure.services.video.cache import cleanup_expired_staging
+
+    # 有 pending describe 时整轮跳过 staging 清理，避免删掉其依赖的产物
+    if not _has_pending_describe():
+        cleanup_expired_staging(structure_settings)
+
+    # 只清理 jobs 表已不存在的 kv 残留（已随 jobs TTL 过期的结果/错误）
+    with huey.storage.db(commit=True) as curs:
+        curs.execute(
+            "DELETE FROM kv WHERE queue = ? AND key NOT IN (SELECT job_id FROM jobs)",
+            (huey.name,),
+        )
+
+
 def run_worker(service: str) -> None:
     """启动 Huey Worker。两个 worker CLI 共用此函数。
 
@@ -194,6 +229,10 @@ def run_worker(service: str) -> None:
     args = parser.parse_args()
 
     init_db()
+
+    # 只在 structure worker 注册 TTL 清理，避免 scene-detect/structure 两个 worker 重复执行
+    if service == "structure":
+        huey.periodic_task(crontab(minute="0", hour="*/6"))(_cleanup_expired)
 
     num_workers = args.workers or 4
     registered = detect_tasks + structure_tasks

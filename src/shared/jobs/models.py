@@ -86,6 +86,12 @@ WHERE status IN ('succeeded', 'failed')
     WHERE job_type = 'structure'
       AND json_extract(request_json, '$.detect_job_id') IS NOT NULL
   )
+  AND job_id NOT IN (
+    SELECT DISTINCT json_extract(request_json, '$.structure_job_id')
+    FROM jobs
+    WHERE job_type = 'describe'
+      AND json_extract(request_json, '$.structure_job_id') IS NOT NULL
+  )
 """
 
 # ── Public helpers ───────────────────────────────────────────────────────

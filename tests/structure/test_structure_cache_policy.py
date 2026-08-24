@@ -158,8 +158,8 @@ class TestCleanupExpiredStaging:
     def test_removes_expired_dirs(self, tmp_path: Path):
         settings = _settings(tmp_path)
         root = Path(settings.staging_base_path)
-        old = root / "old_job"
-        new = root / "new_job"
+        old = root / "11111111-1111-1111-1111-111111111111"
+        new = root / "22222222-2222-2222-2222-222222222222"
         old.mkdir(parents=True)
         new.mkdir(parents=True)
 
@@ -176,6 +176,18 @@ class TestCleanupExpiredStaging:
         assert removed == 1
         assert not old.exists()
         assert new.exists()
+
+    def test_skips_non_job_dirs(self, tmp_path: Path):
+        settings = _settings(tmp_path)
+        root = Path(settings.staging_base_path)
+        legacy = root / "scenes"
+        legacy.mkdir(parents=True)
+        import os
+
+        os.utime(legacy, (1_000_000_000, 1_000_000_000))
+        removed = cleanup_expired_staging(settings, now=1_000_000_000 + 7200)
+        assert removed == 0
+        assert legacy.exists()
 
     def test_noop_when_ttl_zero(self, tmp_path: Path):
         settings = _settings(tmp_path)
