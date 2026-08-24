@@ -69,6 +69,19 @@ loggers:
     level: WARNING
     handlers: [default, server_file]
     propagate: no
+  # ── 第三方 SDK 日志级别 ────────────────────────────────
+  # OpenAI SDK 及其底层的 httpx 在 DEBUG 级别会打印完整请求体
+  # （含 data:image/jpeg;base64,... 图片内容，单次可达上百 KB）。
+  # 即使 root 级别为 DEBUG 也必须压制，避免 base64 泄露进日志。
+  openai:
+    level: WARNING
+    propagate: no
+  httpx:
+    level: WARNING
+    propagate: no
+  httpcore:
+    level: WARNING
+    propagate: no
 root:
   handlers: [default, server_file]
   propagate: no
