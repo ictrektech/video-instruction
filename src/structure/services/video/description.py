@@ -218,7 +218,11 @@ async def describe_scenes(
         if s.grid_image is None
     ]
 
-    item_results: list[tuple[SceneDescriptionItem, WarningDTO | None]] = await gather(*tasks)
+    try:
+        item_results: list[tuple[SceneDescriptionItem, WarningDTO | None]] = await gather(*tasks)
+    finally:
+        await llm_client.close()
+
     results = [item for item, _ in item_results]
     warnings: list[WarningDTO] = [w for _, w in item_results if w is not None]
     results.extend(skipped)

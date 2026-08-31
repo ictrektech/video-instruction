@@ -47,6 +47,10 @@ class LLMClient:
             max_retries=2,
         )
 
+    async def close(self) -> None:
+        """关闭底层 AsyncOpenAI/httpx 客户端，避免事件循环关闭后泄漏。"""
+        await self._client.close()
+
     async def describe_image(self, image_path: Path, scene_index: int) -> str:
         """对单张场景图片进行大模型描述
 
