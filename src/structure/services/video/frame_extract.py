@@ -9,6 +9,11 @@ from pathlib import Path
 
 from PIL import Image, ImageFile
 
+from shared.utils.video_source import (
+    ffmpeg_network_options,
+    is_http_url,
+    redact_url,
+)
 from structure.core.settings import settings
 from structure.schemas.video import SceneDTO, WarningDTO
 
@@ -79,11 +84,12 @@ def extract_scene_grids(
             )
             results.append((dto, scene_warnings))
         except Exception as exc:
-            logger.warning("场景 %d 九宫格生成失败: %s", index + 1, exc)
+            message = redact_url(str(exc))
+            logger.warning("场景 %d 九宫格生成失败: %s", index + 1, message)
             scene_warnings.append(
                 WarningDTO(
                     code="grid_failed",
-                    message=f"场景 {index + 1} 九宫格生成失败: {exc}",
+                    message=f"场景 {index + 1} 九宫格生成失败: {message}",
                     scope="frame_grid",
                     target_id=f"scene_index:{index}",
                 )
@@ -253,34 +259,41 @@ def _extract_frames(
 
     output_pattern = out_dir / f"{prefix}_%03d.jpg"
 
-    subprocess.run(  # noqa: S603
-        [
-            shutil.which("ffmpeg") or "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-threads",
-            str(max(0, ffmpeg_threads)),
-            "-ss",
-            f"{start_time:.3f}",
-            "-i",
-            video_path,
-            "-to",
-            f"{end_time:.3f}",
-            "-vf",
-            f"fps={target_fps:.6f}",
-            "-frames:v",
-            str(count),
-            "-q:v",
-            "5",
-            "-an",
-            str(output_pattern),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    cmd = [
+        shutil.which("ffmpeg") or "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-threads",
+        str(max(0, ffmpeg_threads)),
+        "-ss",
+        f"{start_time:.3f}",
+    ]
+    if is_http_url(video_path):
+        cmd.extend(ffmpeg_network_options())
+    cmd += [
+        "-i",
+        video_path,
+        "-to",
+        f"{end_time:.3f}",
+        "-vf",
+        f"fps={target_fps:.6f}",
+        "-frames:v",
+        str(count),
+        "-q:v",
+        "5",
+        "-an",
+        str(output_pattern),
+    ]
+
+    result = subprocess.run(  # noqa: S603
+        cmd, capture_output=True, text=True, check=False
     )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg 取帧失败 (exit={result.returncode}): {redact_url(result.stderr.strip())}"
+        )
 
     extracted = sorted(out_dir.glob(f"{prefix}_*.jpg"))
     # fps 过滤器输出已按时间均匀分布，直接补齐到 count 个

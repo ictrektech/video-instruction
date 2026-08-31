@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 from scene_detect.core.settings import settings as detect_settings
 from scene_detect.schemas.jobs import DetectJobRequest
-from scene_detect.utils import coalesce, resolve_video_path
+from scene_detect.utils import coalesce
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.jobs import (
@@ -19,7 +19,12 @@ from shared.jobs import (
 )
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
-from shared.utils.video_hash import compute_video_hash
+from shared.utils.video_source import (
+    is_http_url,
+    redact_url,
+    resolve_video_path,
+    video_identity,
+)
 
 logger = getLogger(__name__)
 
@@ -39,10 +44,10 @@ async def submit_detect_job(
 ) -> ResponseDTO[JobSubmitResponse]:
     """提交 scene-detect 异步任务。"""
     video_path = resolve_video_path(req.video_path, detect_settings.data_base_path)
-    if not Path(video_path).is_file():
+    if not is_http_url(video_path) and not Path(video_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
-    video_hash = compute_video_hash(video_path)
+    video_hash = video_identity(video_path)
 
     existing = get_pending_job_by_video_hash("scene_detect", video_hash)
     if existing:
@@ -67,7 +72,12 @@ async def submit_detect_job(
         video_hash=video_hash,
     )
 
-    logger.info("提交 scene-detect job: id=%s hash=%s video=%s", job_id, video_hash, video_path)
+    logger.info(
+        "提交 scene-detect job: id=%s hash=%s video=%s",
+        job_id,
+        video_hash,
+        redact_url(video_path),
+    )
     return ResponseDTO.ok(build_job_submit_response(job_id, _POLL_PREFIX))
 
 

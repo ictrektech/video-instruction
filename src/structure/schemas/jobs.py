@@ -12,7 +12,7 @@ class SceneBoundaryInput(BaseModel):
 class StructureJobRequest(BaseModel):
     """提交 structure 异步任务的请求（两种传 scenes 方式二选一）。"""
 
-    video_path: str = Field(description="视频文件路径")
+    video_path: str = Field(description="视频文件路径，或 http(s):// 视频流 URL")
 
     # 方式 A：直接传 scenes
     scenes: list[SceneBoundaryInput] | None = Field(default=None, description="场景边界列表")

@@ -16,10 +16,14 @@ from shared.jobs import (
 )
 from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
-from shared.utils.video_hash import compute_video_hash
+from shared.utils.video_source import (
+    is_http_url,
+    redact_url,
+    resolve_video_path,
+    video_identity,
+)
 from structure.core.settings import settings
 from structure.schemas.jobs import StructureJobRequest
-from structure.utils import resolve_video_path
 
 logger = getLogger(__name__)
 
@@ -43,9 +47,9 @@ async def submit_structure_job(
       - scenes：直接传入场景边界列表
       - detect_job_id：引用 scene-detect job 的结果
     """
-    abs_path = resolve_video_path(req.video_path, settings.data_base_path)
-    if not Path(abs_path).is_file():
-        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, abs_path)
+    media_path = resolve_video_path(req.video_path, settings.data_base_path)
+    if not is_http_url(media_path) and not Path(media_path).is_file():
+        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, media_path)
 
     if not req.scenes and not req.detect_job_id:
         raise ApiException(
@@ -61,7 +65,7 @@ async def submit_structure_job(
                 f"detect_job_id={req.detect_job_id}",
             )
 
-    video_hash = compute_video_hash(abs_path)
+    video_hash = video_identity(media_path)
 
     existing = get_pending_job_by_video_hash("structure", video_hash)
     if existing:
@@ -76,7 +80,7 @@ async def submit_structure_job(
         "grid_rows": req.grid_rows,
         "grid_cols": req.grid_cols,
     }
-    request_data = {"video_path": abs_path, "video_hash": video_hash, **task_kwargs}
+    request_data = {"video_path": media_path, "video_hash": video_hash, **task_kwargs}
 
     from structure.services.tasks import run_structure
 
@@ -84,12 +88,17 @@ async def submit_structure_job(
         "structure",
         request_data,
         run_structure.task_class,
-        task_args=(abs_path,),
+        task_args=(media_path,),
         task_kwargs=task_kwargs,
         video_hash=video_hash,
     )
 
-    logger.info("提交 structure job: id=%s hash=%s video=%s", job_id, video_hash, abs_path)
+    logger.info(
+        "提交 structure job: id=%s hash=%s video=%s",
+        job_id,
+        video_hash,
+        redact_url(media_path),
+    )
     return ResponseDTO.ok(build_job_submit_response(job_id, _POLL_PREFIX))
 
 

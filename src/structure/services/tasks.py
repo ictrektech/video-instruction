@@ -12,6 +12,7 @@ import time
 from logging import getLogger
 
 from shared.jobs import get_job, huey, update_job
+from shared.utils.video_source import redact_url
 
 logger = getLogger(__name__)
 
@@ -119,9 +120,9 @@ def run_structure(
             status="failed",
             finished_at=finished_at,
             error_code="STRUCTURE_ERROR",
-            error_message=str(exc),
+            error_message=redact_url(str(exc)),
         )
-        logger.exception("structure 失败: job=%s", job_id)
+        logger.exception("structure 失败: job=%s err=%s", job_id, redact_url(str(exc)))
         raise
 
 

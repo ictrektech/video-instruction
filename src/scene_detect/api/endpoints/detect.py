@@ -10,10 +10,11 @@ from fastapi import APIRouter
 from scene_detect.core.settings import settings
 from scene_detect.schemas.scene import DetectRequest, DetectResult
 from scene_detect.services.detector import detect_scenes
-from scene_detect.utils import coalesce, resolve_video_path
+from scene_detect.utils import coalesce
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.schemas.common.response import ResponseDTO
+from shared.utils.video_source import is_http_url, resolve_video_path
 
 logger = getLogger(__name__)
 
@@ -31,12 +32,12 @@ async def detect_scene(
 ) -> ResponseDTO[DetectResult]:
     """对视频执行场景识别。
 
-    - ``video_path`` 为相对于 ``data_base_path`` 的路径（也支持绝对路径）。
+    - ``video_path`` 为本地路径（相对/绝对）或 ``http(s)://`` 视频流 URL。
     - 只检测场景边界，不进行任何结构化操作。
     - 返回场景列表（含 start_frame / end_frame / start_time / end_time）。
     """
     video_path = resolve_video_path(command.video_path, settings.data_base_path)
-    if not Path(video_path).is_file():
+    if not is_http_url(video_path) and not Path(video_path).is_file():
         raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, video_path)
 
     started_at = time.time()

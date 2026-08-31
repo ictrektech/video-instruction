@@ -13,6 +13,7 @@ import time
 from logging import getLogger
 
 from shared.jobs import huey, update_job
+from shared.utils.video_source import redact_url
 
 logger = getLogger(__name__)
 
@@ -84,7 +85,7 @@ def run_detect_scenes(
             "scene-detect 完成: job=%s video=%s scenes=%d warnings=%d "
             "elapsed=%ds threshold=%s max_scenes=%s scale=%s decode_threads=%s",
             job_id,
-            video_path,
+            redact_url(video_path),
             len(scenes),
             len(warnings),
             finished_at - started_at,
@@ -102,13 +103,14 @@ def run_detect_scenes(
             status="failed",
             finished_at=finished_at,
             error_code="SCENE_DETECT_ERROR",
-            error_message=str(exc),
+            error_message=redact_url(str(exc)),
         )
         logger.exception(
-            "scene-detect 失败: job=%s video=%s threshold=%s "
+            "scene-detect 失败: job=%s video=%s err=%s threshold=%s "
             "max_scenes=%s scale=%s decode_threads=%s",
             job_id,
-            video_path,
+            redact_url(video_path),
+            redact_url(str(exc)),
             threshold,
             max_scenes,
             scale_width,

@@ -233,7 +233,7 @@ class TestStructurePipeline:
 
         monkeypatch.setattr("structure.services.video.pipeline.settings", settings)
         monkeypatch.setattr(
-            "structure.services.video.pipeline.compute_video_hash",
+            "structure.services.video.pipeline.video_identity",
             lambda _path: "hash123",
         )
         monkeypatch.setattr(
@@ -283,7 +283,7 @@ class TestStructurePipeline:
             _settings(tmp_path),
         )
         monkeypatch.setattr(
-            "structure.services.video.pipeline.compute_video_hash",
+            "structure.services.video.pipeline.video_identity",
             lambda _path: "hash123",
         )
         monkeypatch.setattr(

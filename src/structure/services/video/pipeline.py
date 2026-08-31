@@ -8,7 +8,7 @@ from pathlib import Path
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
-from shared.utils.video_hash import compute_video_hash
+from shared.utils.video_source import is_http_url, video_identity
 from structure.core.settings import settings
 from structure.schemas.video import (
     SceneDTO,
@@ -43,12 +43,11 @@ async def structure(
 
     Args:
         cmd: 结构化请求参数（需含 structure_job_id 作为 staging 目录名）。
-        video_path: 视频文件绝对路径。
+        video_path: 本地视频文件路径或 http(s):// 视频流 URL。
         work_dir: 工作目录，默认使用 ``settings.video_work_dir``。
     """
-    video_path_obj = Path(video_path)
-    if not video_path_obj.is_file():
-        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, str(video_path_obj))
+    if not is_http_url(video_path) and not Path(video_path).is_file():
+        raise ApiException(BusinessErrorCode.VIDEO_FILE_NOT_FOUND, str(video_path))
 
     if not cmd.scenes:
         raise ApiException(
@@ -71,7 +70,7 @@ async def structure(
     warnings: list[WarningDTO] = []
 
     # ── Step 1: 视频身份 hash（用于 metadata / manifest 元数据）───────────
-    video_hash = await asyncio.to_thread(compute_video_hash, video_path)
+    video_hash = await asyncio.to_thread(video_identity, video_path)
 
     # ── Step 2: 提取元数据 ──────────────────────────────────────────────
     t0 = time.time()

@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 from fractions import Fraction
-from logging import getLogger
 
-logger = getLogger(__name__)
+from shared.utils.video_source import (
+    ffmpeg_network_options,
+    is_http_url,
+    redact_url,
+)
 
 
 def _parse_rate(rate: str | None) -> float:
@@ -43,13 +46,18 @@ def query_video_metadata(
         "json",
         "-show_format",
         "-show_streams",
-        video_path,
     ]
+    if is_http_url(video_path):
+        cmd.extend(ffmpeg_network_options())
+    cmd.append(video_path)
+
     result = subprocess.run(  # noqa: S603 — video_path validated upstream
         cmd, capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffprobe 失败 (exit={result.returncode}): {result.stderr.strip()}")
+        raise RuntimeError(
+            f"ffprobe 失败 (exit={result.returncode}): {redact_url(result.stderr.strip())}"
+        )
 
     probe = json.loads(result.stdout or "{}")
     video_stream = next(

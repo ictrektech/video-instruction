@@ -18,8 +18,16 @@ from scene_detect.schemas.scene import (
     ScenePolicyDTO,
     WarningDTO,
 )
+from shared.utils.video_source import ffmpeg_network_options, is_http_url, redact_url
 
 logger = getLogger(__name__)
+
+
+def _display_name(video_path: str) -> str:
+    """日志使用的视频名：URL 脱敏，本地路径取 basename。"""
+    if is_http_url(video_path):
+        return redact_url(video_path)
+    return os.path.basename(video_path)
 
 
 @dataclass(frozen=True)
@@ -87,7 +95,7 @@ def detect_scenes(
 
     logger.info(
         "scene-detect 策略: video=%s duration=%.2fs threshold=%s min_scene_len=%.2fs max_scenes=%s",
-        os.path.basename(video_path),
+        _display_name(video_path),
         metadata.duration,
         effective_threshold,
         policy.min_scene_len_sec,
@@ -132,7 +140,7 @@ def detect_scenes(
         final_boundaries = _post_process_scenes(boundaries, policy, effective_max_scenes, warnings)
         logger.info(
             "scene-detect 完成: video=%s raw_scenes=%d final_scenes=%d warnings=%d",
-            os.path.basename(video_path),
+            _display_name(video_path),
             len(boundaries),
             len(final_boundaries),
             len(warnings),
@@ -148,6 +156,9 @@ def detect_scenes(
             warnings,
         )
     except Exception as exc:
+        if is_http_url(video_path):
+            logger.error("URL 场景检测失败: %s", redact_url(video_path))
+            raise
         logger.warning("场景检测失败，回退为单场景: %s", exc)
         warnings.append(
             WarningDTO(
@@ -430,10 +441,10 @@ class FfmpegVideoStream(VideoStream):
             "error",
             "-threads",
             str(threads),
-            "-i",
-            video_path,
-            "-an",
         ]
+        if is_http_url(video_path):
+            cmd.extend(ffmpeg_network_options())
+        cmd += ["-i", video_path, "-an"]
         if (self._width, self._height) != (width, height):
             cmd += ["-vf", f"scale={self._width}:{self._height}"]
         cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
@@ -459,7 +470,7 @@ class FfmpegVideoStream(VideoStream):
         self._duration: FrameTimecode | None = None
         if self._total_frames > 0:
             self._duration = self._timecode_base + self._total_frames
-        self._name = os.path.basename(video_path)
+        self._name = _display_name(video_path)
         self._path = video_path
 
     @property
@@ -483,7 +494,10 @@ class FfmpegVideoStream(VideoStream):
             return False
         raw = _read_exact(self._r_fd, self._frame_bytes)
         if not raw:
+            proc = self._proc
             self.close()
+            if proc is not None and proc.returncode != 0:
+                raise RuntimeError(f"ffmpeg 管道提前退出: exit={proc.returncode}")
             return False
         self._frame_number += 1
         if decode:

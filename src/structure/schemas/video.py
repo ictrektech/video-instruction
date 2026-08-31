@@ -14,7 +14,9 @@ class SceneBoundaryInput(BaseModel):
 class StructureCommand(BaseModel):
     """视频结构化请求参数"""
 
-    video_path: str = Field(description="视频文件路径，相对于 data_base_path")
+    video_path: str = Field(
+        description="视频文件路径（相对 data_base_path 或绝对路径），或 http(s):// 视频流 URL"
+    )
     scenes: list[SceneBoundaryInput] = Field(
         description="场景边界列表，由 scene-detection 服务提供"
     )
@@ -27,7 +29,9 @@ class StructureCommand(BaseModel):
 class CacheClearCommand(BaseModel):
     """清除缓存请求参数"""
 
-    video_path: str = Field(description="视频文件路径，相对于 data_base_path")
+    video_path: str = Field(
+        description="视频文件路径（相对 data_base_path 或绝对路径），或 http(s):// 视频流 URL"
+    )
 
 
 class SceneDTO(BaseModel):
@@ -45,7 +49,7 @@ class SceneDTO(BaseModel):
 class VideoMetadataSchema(BaseModel):
     """视频元数据 DTO"""
 
-    video_path: str = Field(description="视频文件路径")
+    video_path: str = Field(description="视频文件路径或 http(s):// 视频流 URL，原样回传")
     fps: float = Field(default=0.0, description="帧率")
     duration: float = Field(default=0.0, description="时长(秒)")
     width: int = Field(default=0, description="视频宽度(像素)")
@@ -68,7 +72,7 @@ class WarningDTO(BaseModel):
 class StructureResultDTO(BaseModel):
     """结构化结果 DTO"""
 
-    video_hash: str = Field(description="视频内容哈希（MD5）")
+    video_hash: str = Field(description="视频身份哈希；URL 模式为脱敏 URL 的 SHA-256")
     metadata: VideoMetadataSchema = Field(description="视频元数据")
     staging_dir: str = Field(
         default="",

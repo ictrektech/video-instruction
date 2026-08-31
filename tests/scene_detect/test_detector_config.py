@@ -15,7 +15,8 @@ from scene_detect.services.detector import (
     select_scene_policy,
     shrink_to_max_scene_count,
 )
-from scene_detect.utils import coalesce, resolve_video_path
+from scene_detect.utils import coalesce
+from shared.utils.video_source import resolve_video_path
 
 
 class TestScaledSize:
