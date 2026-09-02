@@ -22,10 +22,11 @@ from structure.schemas.model_config import ModelConfig
 from structure.schemas.video import SceneDTO, WarningDTO
 from structure.services.llm.client import LLMClient, LLMRequestError
 from structure.services.video.cache import (
-    DESCRIPTIONS_FILENAME,
+    get_descriptions_path,
     get_grids_dir,
     load_manifest,
     load_scenes,
+    staging_dir_from_row,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,28 +46,18 @@ def _resolve_staging_dir(structure_job_id: str) -> Path:
             f"structure_job_id={structure_job_id} status={row['status']}",
         )
 
-    import json as _json
-
-    try:
-        ref = _json.loads(row["result_ref"]) if row["result_ref"] else {}
-    except (json.JSONDecodeError, TypeError):
-        ref = {}
-    staging_dir = ref.get("staging_dir")
-    if not staging_dir:
+    staging_dir = staging_dir_from_row(row)
+    if staging_dir is None:
         raise ApiException(
             BusinessErrorCode.STRUCTURE_JOB_NOT_SUCCEEDED,
             f"structure_job result_ref 缺少 staging_dir: {structure_job_id}",
         )
-    return Path(staging_dir)
-
-
-def _descriptions_path(staging_dir: Path) -> Path:
-    return staging_dir / DESCRIPTIONS_FILENAME
+    return staging_dir
 
 
 def _load_cached_descriptions(staging_dir: Path) -> SceneDescriptionResult | None:
     """从 staging 目录读取已有描述结果"""
-    path = _descriptions_path(staging_dir)
+    path = get_descriptions_path(staging_dir)
     if not path.is_file():
         return None
     try:
@@ -80,7 +71,7 @@ def _load_cached_descriptions(staging_dir: Path) -> SceneDescriptionResult | Non
 
 def _save_descriptions(staging_dir: Path, result: SceneDescriptionResult) -> None:
     """保存描述结果到 staging 目录"""
-    path = _descriptions_path(staging_dir)
+    path = get_descriptions_path(staging_dir)
     fd, tmp_path = tempfile.mkstemp(dir=staging_dir, suffix=".tmp")
     try:
         with open(fd, "w", encoding="utf-8") as f:

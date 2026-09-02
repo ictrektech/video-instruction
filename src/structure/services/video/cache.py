@@ -46,6 +46,25 @@ def get_grids_dir(staging_dir: Path) -> Path:
     return staging_dir / GRIDS_DIRNAME
 
 
+def get_descriptions_path(staging_dir: Path) -> Path:
+    return staging_dir / DESCRIPTIONS_FILENAME
+
+
+def staging_dir_from_row(row: dict) -> Path | None:
+    """从 structure job 的 result_ref 解析 staging 目录（不存在返回 None）。"""
+    ref = row.get("result_ref")
+    if not ref:
+        return None
+    try:
+        data = json.loads(ref)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("staging_dir")
+    return Path(value) if value else None
+
+
 # ── manifest 构建 ──────────────────────────────────────────────────────────
 
 
