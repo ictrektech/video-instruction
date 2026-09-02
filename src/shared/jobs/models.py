@@ -94,6 +94,14 @@ WHERE status IN ('succeeded', 'failed')
   )
 """
 
+SQL_GET_DESCRIBE_STATUS = """
+SELECT status FROM jobs
+WHERE job_type = 'describe'
+  AND video_hash = ?
+ORDER BY created_at DESC
+LIMIT 1
+"""
+
 # ── Public helpers ───────────────────────────────────────────────────────
 
 
@@ -171,6 +179,19 @@ def get_pending_job_by_video_hash(job_type: str, video_hash: str) -> str | None:
     with _db()() as curs:
         row = curs.execute(SQL_GET_PENDING_JOB_BY_VIDEO_HASH, (job_type, video_hash)).fetchone()
     return row[0] if row else None
+
+
+def get_describe_status(structure_job_id: str) -> str:
+    """查询最新 describe job 状态：none | pending | succeeded | failed。"""
+    with _db()() as curs:
+        row = curs.execute(
+            SQL_GET_DESCRIBE_STATUS,
+            (structure_job_id,),
+        ).fetchone()
+    if row is None:
+        return "none"
+    status = row[0]
+    return "pending" if status in ("queued", "running") else status
 
 
 _JOB_COLUMNS = [

@@ -1,5 +1,31 @@
 from pydantic import BaseModel, Field
 
+from shared.jobs.schemas import JobStatusResponse
+
+
+class ArtifactFileDTO(BaseModel):
+    """artifact 单文件信息"""
+
+    path: str
+    size: int
+
+
+class ArtifactDTO(BaseModel):
+    """structure job 的 artifact 可下载清单（v2 增量）"""
+
+    describe_status: str = Field(description="none | pending | succeeded | failed")
+    total_bytes: int
+    files: list[ArtifactFileDTO]
+
+
+class StructureJobStatusResponse(JobStatusResponse):
+    """structure job 状态响应（v2 增量：含 released 与 artifact 块）。"""
+
+    released: bool = Field(default=False, description="staging 目录是否已不存在")
+    artifact: ArtifactDTO | None = Field(
+        default=None, description="可下载产物清单；未冻结/已释放时为 null"
+    )
+
 
 class SceneBoundaryInput(BaseModel):
     scene_index: int = 0

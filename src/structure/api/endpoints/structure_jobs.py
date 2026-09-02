@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from logging import getLogger
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
@@ -14,7 +17,7 @@ from shared.jobs import (
     get_job,
     get_pending_job_by_video_hash,
 )
-from shared.jobs.schemas import JobStatusResponse, JobSubmitResponse
+from shared.jobs.schemas import JobSubmitResponse
 from shared.schemas.common.response import ResponseDTO
 from shared.utils.video_source import (
     is_http_url,
@@ -23,13 +26,21 @@ from shared.utils.video_source import (
     video_identity,
 )
 from structure.core.settings import settings
-from structure.schemas.jobs import StructureJobRequest
+from structure.schemas.jobs import ArtifactDTO, StructureJobRequest, StructureJobStatusResponse
+from structure.services.video import artifact as artifact_service
 
 logger = getLogger(__name__)
 
 router = APIRouter()
 
 _POLL_PREFIX = "/api/v2/video/structure/jobs"
+
+
+def _artifact_error(status_code: int, code: int, msg: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=ResponseDTO.fail(code, msg).model_dump(),
+    )
 
 
 @router.post(
@@ -104,13 +115,120 @@ async def submit_structure_job(
 
 @router.get(
     "/structure/jobs/{job_id}",
-    response_model=ResponseDTO[JobStatusResponse],
+    response_model=ResponseDTO[StructureJobStatusResponse],
     summary="查询视频结构化任务状态",
     description="成功时 result 为 StructureResultDTO 的完整 dict。",
 )
-async def get_structure_job(job_id: str) -> ResponseDTO[JobStatusResponse]:
+async def get_structure_job(job_id: str) -> ResponseDTO[StructureJobStatusResponse]:
     """查询 structure 任务状态与结果。"""
     row = get_job(job_id)
     if row is None:
         raise ApiException(BusinessErrorCode.JOB_NOT_FOUND, f"job_id={job_id}")
-    return ResponseDTO.ok(build_job_status_response(row))
+    base = build_job_status_response(row)
+    released = False
+    if row["job_type"] == "structure":
+        staging = artifact_service.staging_dir_from_row(row)
+        released = staging is not None and not staging.is_dir()
+    response = StructureJobStatusResponse(
+        **base.model_dump(),
+        released=released,
+    )
+    if row["job_type"] == "structure":
+        artifact_info = artifact_service.build_status_artifact_info(row)
+        if artifact_info is not None:
+            response.artifact = ArtifactDTO.model_validate(artifact_info)
+    return ResponseDTO.ok(response)
+
+
+@router.get(
+    "/structure/jobs/{job_id}/artifact",
+    summary="下载 structure 产物 tar 包",
+    description=("返回 application/x-tar 流（manifest.json、grids/**、descriptions.json[可选]）。"),
+)
+async def get_structure_artifact(job_id: str) -> Response:
+    """下载 structure 产物整体 tar 流（v2 增量 Pull 交付）。"""
+    row = get_job(job_id)
+    if row is None or row["job_type"] != "structure":
+        return _artifact_error(
+            404,
+            BusinessErrorCode.JOB_NOT_FOUND.code,
+            BusinessErrorCode.JOB_NOT_FOUND.message.format(job_id),
+        )
+    if row["status"] != "succeeded":
+        return _artifact_error(
+            409,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.code,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.message.format(
+                "任务未成功，产物不可下载"
+            ),
+        )
+    staging = artifact_service.staging_dir_from_row(row)
+    if staging is None or not staging.is_dir():
+        return _artifact_error(
+            410,
+            BusinessErrorCode.COMMON_OBJECT_NOT_FOUND.code,
+            "staging 产物不存在",
+        )
+
+    result = await asyncio.to_thread(
+        artifact_service.build_artifact_download,
+        staging,
+        job_id,
+    )
+    if result is None:
+        return _artifact_error(
+            410,
+            BusinessErrorCode.COMMON_OBJECT_NOT_FOUND.code,
+            "产物不存在",
+        )
+    info, tar_path = result
+    if info.get("describe_status") == "pending":
+        # 生成期间 describe 刚被提交，返回 409 让客户端继续轮询
+        return _artifact_error(
+            409,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.code,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.message.format(
+                "describe 进行中，产物尚未冻结"
+            ),
+        )
+    if tar_path is None:
+        return _artifact_error(
+            410,
+            BusinessErrorCode.COMMON_OBJECT_NOT_FOUND.code,
+            "产物不存在",
+        )
+    return FileResponse(
+        tar_path,
+        media_type="application/x-tar",
+        headers={"X-Artifact-Describe-Status": info.get("describe_status", "")},
+        background=BackgroundTask(Path(tar_path).unlink, missing_ok=True),
+    )
+
+
+@router.delete(
+    "/structure/jobs/{job_id}",
+    response_model=ResponseDTO[dict],
+    summary="释放 structure 产物 staging（幂等）",
+    description="Pull 客户端下载 artifact 后调用；服务端立刻释放 staging，重复调用幂等。",
+)
+async def delete_structure_job(job_id: str) -> ResponseDTO[dict] | JSONResponse:
+    """显式释放 staging 所有权（v2 增量 Pull 交付）。"""
+    row = get_job(job_id)
+    if row is None or row["job_type"] != "structure":
+        return _artifact_error(
+            404,
+            BusinessErrorCode.JOB_NOT_FOUND.code,
+            BusinessErrorCode.JOB_NOT_FOUND.message.format(job_id),
+        )
+    if row["status"] not in ("succeeded", "failed"):
+        return _artifact_error(
+            409,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.code,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.message.format(
+                f"job status={row['status']} 不可释放"
+            ),
+        )
+    staging = artifact_service.staging_dir_from_row(row)
+    if staging is not None:
+        await asyncio.to_thread(artifact_service.release_staging, staging)
+    return ResponseDTO.ok({"job_id": job_id, "released": True})
