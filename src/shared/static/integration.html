@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Instruction · 接入文档</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #656d76;
+    --line: #d8dee4;
+    --accent: #2f6feb;
+    --accent-soft: #eaf1ff;
+    --code-bg: #0d1117;
+    --code-text: #c9d1d9;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px 80px; }
+
+  header {
+    background: linear-gradient(135deg, #1f2937, #334155);
+    color: #fff;
+    padding: 44px 0 38px;
+    margin-bottom: 32px;
+  }
+  header .wrap { padding-bottom: 0; }
+  header h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .3px; }
+  header p { margin: 0; color: #b9c3cf; font-size: 14px; }
+  .tags { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 12px;
+  }
+
+  .layout { display: grid; grid-template-columns: 210px 1fr; gap: 32px; align-items: start; }
+  nav {
+    position: sticky;
+    top: 24px;
+    font-size: 13px;
+    border-left: 2px solid var(--line);
+    padding-left: 14px;
+  }
+  nav a { display: block; color: var(--muted); text-decoration: none; padding: 5px 0; }
+  nav a:hover { color: var(--accent); }
+  nav b { display: block; margin: 14px 0 4px; color: var(--text); font-size: 12px; }
+
+  section { scroll-margin-top: 24px; margin-bottom: 40px; }
+  h2 {
+    font-size: 19px;
+    margin: 0 0 4px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 15px; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  ul { margin: 10px 0; padding-left: 22px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-top: 14px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f2f4f7; font-weight: 600; white-space: nowrap; }
+  td code { white-space: nowrap; }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: #eef1f4;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.65;
+    margin: 12px 0 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+  .method {
+    display: inline-block;
+    min-width: 54px;
+    text-align: center;
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .post { background: #1a7f37; }
+  .get { background: #0969da; }
+  .del { background: #cf222e; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    margin-top: 12px;
+    font-size: 13.5px;
+  }
+  .note.warn { border-color: var(--warn); background: #fff8e6; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  .kv { font-size: 13.5px; }
+  .kv div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .kv span:last-child { color: var(--muted); text-align: right; }
+
+  footer { color: var(--muted); font-size: 12.5px; text-align: center; margin-top: 48px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; border-left: 0; border-top: 2px solid var(--line); padding: 12px 0 0; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Video Instruction · 接入文档</h1>
+    <p>视频场景检测（scene-detect）与视频结构化（structure）双服务 HTTP API，供 VOS 平台内其他应用调用。</p>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="layout">
+
+  <nav>
+    <b>开始</b>
+    <a href="#overview">服务概览</a>
+    <a href="#access">访问地址</a>
+    <a href="#quickstart">接入流程</a>
+    <b>接口</b>
+    <a href="#scene-detect">scene-detect</a>
+    <a href="#structure">structure</a>
+    <a href="#describe">describe</a>
+    <a href="#response">响应结构与错误码</a>
+    <b>契约</b>
+    <a href="#video-path">video_path 规则（推荐 URL）</a>
+    <a href="#lifecycle">任务生命周期</a>
+    <a href="#artifact">产物与释放</a>
+    <a href="#config">服务端配置</a>
+    <a href="#checklist">接入检查清单</a>
+  </nav>
+
+  <main>
+
+  <section id="overview">
+    <h2>服务概览</h2>
+    <p>两个独立部署的 FastAPI 服务，各自内嵌 Huey worker，互不依赖；structure 可引用 scene-detect 的 job 结果。</p>
+
+    <table>
+      <tr><th>服务</th><th>容器端口</th><th>宿主端口</th><th>职责</th></tr>
+      <tr>
+        <td>scene-detect</td><td><code>8910</code></td><td><code>48910</code></td>
+        <td>ffprobe 取元数据 → PySceneDetect 检测场景边界 → 返回 <code>scenes[]</code></td>
+      </tr>
+      <tr>
+        <td>structure</td><td><code>8911</code></td><td><code>48911</code></td>
+        <td>按场景抽帧拼九宫格 → 写 staging → 打包 tar；可选 VLM 场景描述</td>
+      </tr>
+    </table>
+
+    <div class="note">
+      服务是<strong>无状态</strong>的：不持有视频资产，产物由调用方主动下载（Pull），下载后显式释放。<br>
+      视频由调用方以 <code>http(s)://</code> URL 提供（<strong>推荐</strong>），服务端只按 URL 流式读取，
+      不依赖共享卷与路径一致性，跨容器/跨主机均可直接处理。详见 <a href="#video-path">video_path 规则</a>。
+    </div>
+  </section>
+
+  <section id="access">
+    <h2>访问地址</h2>
+    <table>
+      <tr><th>部署形态</th><th>Base URL</th></tr>
+      <tr>
+        <td>VOS 平台 · 同机直连（推荐）</td>
+        <td><code>http://172.17.0.1:48910</code> / <code>http://172.17.0.1:48911</code></td>
+      </tr>
+      <tr>
+        <td>VOS 平台 · 经 Traefik 网关</td>
+        <td><code>http://${VOS_HOST_GW_IP}:${VOS_API_GW_PORT_INTERNAL}/api/com.ictrek.video-instruction/{scene|structure}</code></td>
+      </tr>
+      <tr>
+        <td>独立 Docker Compose</td>
+        <td><code>http://&lt;host&gt;:${SCENE_DETECTION_PORT:-8910}</code> / <code>${STRUCTURE_PORT:-8911}</code></td>
+      </tr>
+    </table>
+    <p>健康检查：<code>GET /api/health</code>（两服务均有）。响应：
+      <code>{"code":0,"msg":"操作成功","data":{"status":"ok","service":"scene-detection"}}</code>，
+      structure 服务的 <code>service</code> 为 <code>"structure"</code>。</p>
+    <div class="note warn">
+      VOS 内调用方请把 base url 声明在自己的 <code>configs.yml</code> 里（string 类型 + 默认值）。平台<strong>不会</strong>因为声明了依赖就注入对方地址。
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <h2>三步接入</h2>
+
+    <h3>1. 提交场景检测（video_path 传视频 URL）</h3>
+<pre><code>curl -X POST http://172.17.0.1:48910/api/v2/scenes/detect/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"video_path": "http://172.17.0.1:38085/api/media/123/stream"}'</code></pre>
+
+    <h3>2. 轮询结果，拿 <code>scenes</code></h3>
+<pre><code>curl http://172.17.0.1:48910/api/v2/scenes/detect/jobs/{job_id}
+# data.status = succeeded 时，data.result.scenes 即场景边界</code></pre>
+
+    <h3>3. 提交结构化（video_path 与第 1 步保持一致）</h3>
+<pre><code>curl -X POST http://172.17.0.1:48911/api/v2/video/structure/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"video_path": "http://172.17.0.1:38085/api/media/123/stream", "detect_job_id": "{job_id}"}'
+# -> data.job_id 即下面的 {structure_job_id}</code></pre>
+
+    <h3>4. 轮询 structure 状态（关键，别跳过）</h3>
+<pre><code>curl http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}
+# 等到 data.status == "succeeded"，且 data.artifact.describe_status != "pending"</code></pre>
+
+    <h3>5. 下载产物 + 释放</h3>
+<pre><code>curl -o structure-{structure_job_id}.tar \
+  http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}/artifact
+curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}</code></pre>
+
+    <div class="note warn">
+      <code>/artifact</code> <strong>不是</strong>轮询接口：它只在任务成功后一次性返回 tar，未就绪直接 <code>409</code>。
+      轮询请打 <code>GET /structure/jobs/{id}</code>；若启用了 describe，还要等 <code>describe_status</code> 从 <code>pending</code> 离开，否则 artifact 仍返回 <code>409</code>。
+    </div>
+
+    <div class="note">
+      也可以跳过第 1、2 步，直接把已有的 <code>scenes</code> 数组传给第 3 步（字段 <code>scenes</code> 与 <code>detect_job_id</code> 二选一）。
+    </div>
+  </section>
+
+  <section id="scene-detect">
+    <h2>scene-detect · :48910</h2>
+
+    <h3><span class="method post">POST</span> <code>/api/v1/scenes/detect</code>（同步）</h3>
+    <p>小文件即时检测，长视频请改用异步 job。</p>
+
+    <p><strong>请求体</strong></p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>video_path</code></td><td>string</td><td>是</td><td>本地路径或 <code>http(s)://</code> URL，<strong>推荐 URL</strong>（见 <a href="#video-path">video_path 规则</a>）</td></tr>
+      <tr><td><code>threshold</code></td><td>float?</td><td>否</td><td>检测阈值；不传按视频时长自动分档（27–32，越大越不敏感）</td></tr>
+      <tr><td><code>max_scenes</code></td><td>int?</td><td>否</td><td>最大场景数；不传按时长分档（20–200），<code>0</code>=不限制</td></tr>
+      <tr><td><code>scale_width</code></td><td>int?</td><td>否</td><td>解码缩放宽度，<code>0</code>=不缩放；不传用服务端配置（默认 640）</td></tr>
+      <tr><td><code>decode_threads</code></td><td>int?</td><td>否</td><td>ffmpeg 解码线程数，<code>0</code>=auto</td></tr>
+    </table>
+
+    <p><strong>响应体（<code>data</code> = <code>DetectResult</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "metadata": {
+      "fps": 25.0,
+      "total_frames": 12000,
+      "duration": 480.0,
+      "width": 1920,
+      "height": 1080
+    },
+    "policy": {
+      "threshold": 29.0,
+      "min_scene_len_sec": 3.5,
+      "max_scene_count": 40
+    },
+    "scenes": [
+      {"scene_index": 0, "start_frame": 0,   "end_frame": 124, "start_time": 0.0,  "end_time": 4.96},
+      {"scene_index": 1, "start_frame": 125, "end_frame": 300, "start_time": 5.0,  "end_time": 12.0}
+    ],
+    "warnings": [
+      {
+        "code": "short_scenes_merged",
+        "message": "短场景合并: 42 -> 38 (min_scene_len_sec=3.5)",
+        "scope": "scenes",
+        "target_id": ""
+      }
+    ],
+    "elapsed_sec": 12.4
+  }
+}</code></pre>
+    <div class="note">
+      <code>scenes</code> 的 <code>end_frame</code> / <code>end_time</code> 为<strong>闭区间</strong>：
+      <code>end_time = (end_frame + 1) / fps</code>，与下一场景的 <code>start_time</code> 无缝衔接。
+      常见 <code>warnings[].code</code>：<code>short_scenes_merged</code>、<code>scene_count_shrunk</code>、<code>scene_detect_fallback</code>。
+    </div>
+
+    <h3><span class="method post">POST</span> <code>/api/v2/scenes/detect/jobs</code></h3>
+    <p>请求体与上面完全一致。相同视频（同一 <code>video_hash</code>）存在 <code>queued</code>/<code>running</code> 任务时<strong>复用并返回同一 job_id</strong>，不会重复计算。</p>
+    <p><strong>响应体（<code>data</code> = <code>JobSubmitResponse</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "6f1c8b0e-2c5a-4c0b-9a51-1f0a7c2d3e4f",
+    "status": "queued",
+    "poll_url": "/api/v2/scenes/detect/jobs/6f1c8b0e-2c5a-4c0b-9a51-1f0a7c2d3e4f"
+  }
+}</code></pre>
+
+    <h3><span class="method get">GET</span> <code>/api/v2/scenes/detect/jobs/{job_id}</code></h3>
+    <p><strong>响应体（<code>data</code> = <code>JobStatusResponse</code>）</strong>——进行中：</p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "6f1c8b0e-2c5a-4c0b-9a51-1f0a7c2d3e4f",
+    "type": "scene_detect",
+    "status": "running",
+    "created_at": 1767225600,
+    "started_at": 1767225601,
+    "finished_at": null,
+    "attempt": 1,
+    "result": null,
+    "error": null
+  }
+}</code></pre>
+
+    <p>成功（<code>status = "succeeded"</code>，<code>result</code> 结构与同步接口一致，<strong>但不含 <code>elapsed_sec</code></strong>）：</p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "6f1c8b0e-2c5a-4c0b-9a51-1f0a7c2d3e4f",
+    "type": "scene_detect",
+    "status": "succeeded",
+    "created_at": 1767225600,
+    "started_at": 1767225601,
+    "finished_at": 1767225614,
+    "attempt": 1,
+    "result": {
+      "metadata": {"fps": 25.0, "total_frames": 12000, "duration": 480.0, "width": 1920, "height": 1080},
+      "policy":  {"threshold": 29.0, "min_scene_len_sec": 3.5, "max_scene_count": 40},
+      "scenes":  [{"scene_index": 0, "start_frame": 0, "end_frame": 124, "start_time": 0.0, "end_time": 4.96}],
+      "warnings": []
+    },
+    "error": null
+  }
+}</code></pre>
+
+    <p>失败（<code>status = "failed"</code>）：</p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "6f1c8b0e-2c5a-4c0b-9a51-1f0a7c2d3e4f",
+    "type": "scene_detect",
+    "status": "failed",
+    "created_at": 1767225600,
+    "started_at": 1767225601,
+    "finished_at": 1767225603,
+    "attempt": 1,
+    "result": null,
+    "error": {
+      "code": "SCENE_DETECT_ERROR",
+      "message": "ffprobe 失败 (exit=1): ...",
+      "detail": null
+    }
+  }
+}</code></pre>
+    <div class="note">
+      job 失败不会体现在 HTTP 状态码上：外层 <code>code</code> 仍是 <code>0</code>，失败信息在 <code>data.status</code> / <code>data.error</code>。
+    </div>
+  </section>
+
+  <section id="structure">
+    <h2>structure · :48911</h2>
+
+    <h3><span class="method post">POST</span> <code>/api/v2/video/structure/jobs</code></h3>
+
+    <p><strong>请求体</strong></p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>video_path</code></td><td>string</td><td>是</td><td>本地路径或 <code>http(s)://</code> URL，<strong>推荐 URL</strong>；须与 scene-detect 阶段指向<strong>同一份视频</strong>，否则 <code>video_hash</code> 不一致</td></tr>
+      <tr><td><code>scenes</code></td><td>array?</td><td>二选一</td><td>场景边界，与 <code>detect_job_id</code> 二选一</td></tr>
+      <tr><td><code>detect_job_id</code></td><td>string?</td><td>二选一</td><td>引用 scene-detect job 结果；该 job 必须已 <code>succeeded</code> 且有 <code>result.scenes</code></td></tr>
+      <tr><td><code>frame_grid</code></td><td>bool</td><td>否</td><td>默认 <code>true</code>，生成九宫格</td></tr>
+      <tr><td><code>grid_rows</code></td><td>int</td><td>否</td><td>默认 <code>3</code></td></tr>
+      <tr><td><code>grid_cols</code></td><td>int</td><td>否</td><td>默认 <code>3</code></td></tr>
+    </table>
+
+    <p><code>scenes[]</code> 元素（可直接回填 scene-detect 的 <code>result.scenes</code>）：</p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td><code>scene_index</code></td><td>int</td><td>场景序号，从 0 开始</td></tr>
+      <tr><td><code>start_frame</code> / <code>end_frame</code></td><td>int</td><td>起止帧（闭区间）</td></tr>
+      <tr><td><code>start_time</code> / <code>end_time</code></td><td>float</td><td>起止时间（秒）</td></tr>
+    </table>
+
+    <p><strong>响应体（<code>data</code> = <code>JobSubmitResponse</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+    "status": "queued",
+    "poll_url": "/api/v2/video/structure/jobs/a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
+  }
+}</code></pre>
+    <div class="note warn">
+      两个字段都不传 → <code>code=10004</code>（<code>scenes 和 detect_job_id 至少提供一个</code>）；
+      <code>detect_job_id</code> 不存在 → <code>code=70201</code>。
+    </div>
+
+    <h3><span class="method get">GET</span> <code>/api/v2/video/structure/jobs/{job_id}</code></h3>
+    <p>在通用状态上额外返回 <code>released</code>（staging 是否已不存在）与 <code>artifact</code>（可下载清单）。</p>
+    <p><strong>响应体（<code>data</code> = <code>StructureJobStatusResponse</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+    "type": "structure",
+    "status": "succeeded",
+    "created_at": 1767225600,
+    "started_at": 1767225601,
+    "finished_at": 1767225642,
+    "attempt": 1,
+    "released": false,
+    "artifact": {
+      "describe_status": "none",
+      "total_bytes": 1048576,
+      "files": [
+        {"path": "manifest.json", "size": 2048},
+        {"path": "grids/scene_001.jpg", "size": 262144},
+        {"path": "grids/scene_002.jpg", "size": 262144}
+      ]
+    },
+    "result": {
+      "video_hash": "3f2a1c...",
+      "metadata": {
+        "video_path": "http://172.17.0.1:38085/api/media/123/stream",
+        "fps": 25.0,
+        "duration": 480.0,
+        "width": 1920,
+        "height": 1080,
+        "codec": "h264",
+        "bitrate": 5242880,
+        "has_audio": true,
+        "total_frames": 12000
+      },
+      "staging_dir": "/data/video-structure-cache/a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+      "scenes": [
+        {
+          "scene_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d-0",
+          "scene_index": 0,
+          "start_time": 0.0,
+          "end_time": 4.96,
+          "start_frame": 0,
+          "end_frame": 124,
+          "grid_image": "scene_001.jpg"
+        }
+      ],
+      "warnings": [],
+      "stage_timings": {"metadata": 0.31, "frame_grid": 38.2, "total": 41.05},
+      "elapsed_sec": 41.05
+    },
+    "error": null
+  }
+}</code></pre>
+    <div class="note">
+      <code>artifact</code> 为 <code>null</code> 的三种情况：任务未 <code>succeeded</code>、staging 已释放、<code>describe_status == "pending"</code>（产物未冻结）。
+      <code>metadata.video_path</code> 原样回传请求里的值。
+    </div>
+
+    <h3><span class="method get">GET</span> <code>/api/v2/video/structure/jobs/{job_id}/artifact</code></h3>
+    <p>返回 <code>application/x-tar</code> 二进制流（<strong>不是 JSON</strong>），响应头 <code>X-Artifact-Describe-Status: none|succeeded|failed</code>。</p>
+    <p><strong>调用前必须先轮询状态接口到 <code>succeeded</code></strong>；未就绪直接返回错误（任务未成功 / describe 进行中产物未冻结），该接口本身不支持轮询等待。</p>
+    <table>
+      <tr><th>状态码</th><th>含义</th></tr>
+      <tr><td><code>200</code></td><td>tar 流，<code>Content-Type: application/x-tar</code></td></tr>
+      <tr><td><code>404</code></td><td>job 不存在，或 job 类型不是 structure</td></tr>
+      <tr><td><code>409</code></td><td>任务未成功，或 describe 进行中产物尚未冻结（继续轮询）</td></tr>
+      <tr><td><code>410</code></td><td>staging 已不存在 / 已释放</td></tr>
+    </table>
+    <p>错误时返回 JSON：</p>
+<pre><code>HTTP/1.1 409 Conflict
+Content-Type: application/json
+
+{
+  "code": 10002,
+  "msg": "不支持的操作: describe 进行中，产物尚未冻结",
+  "data": null
+}</code></pre>
+
+    <h3><span class="method del">DELETE</span> <code>/api/v2/video/structure/jobs/{job_id}</code></h3>
+    <p>下载完成后显式释放 staging，<strong>幂等</strong>（已释放再调仍返回成功）。</p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+    "released": true
+  }
+}</code></pre>
+    <div class="note warn">
+      job 处于 <code>queued</code>/<code>running</code> 时不可释放，返回 <code>409</code> + <code>code=10002</code>。
+    </div>
+  </section>
+
+  <section id="describe">
+    <h2>describe · :48911（可选）</h2>
+    <p>对已完成的 structure 产物调用 VLM 生成场景描述，结果写回 <code>descriptions.json</code>。同一 <code>structure_job_id</code> 已有未完成任务时复用并返回同一 job_id。</p>
+
+    <h3><span class="method post">POST</span> <code>/api/v2/video/describe/jobs</code></h3>
+    <p><strong>请求体</strong></p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>structure_job_id</code></td><td>string</td><td>是</td><td>已 <code>succeeded</code> 的 structure job ID；按其 staging 目录读取九宫格</td></tr>
+      <tr><td><code>force</code></td><td>bool</td><td>否</td><td>默认 <code>false</code>，忽略已有描述重新生成</td></tr>
+      <tr><td><code>model_cfg</code></td><td>object?</td><td>否</td><td>不传则用服务端默认模型</td></tr>
+    </table>
+
+    <p><code>model_cfg</code> 字段：</p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+      <tr><td><code>base_url</code></td><td>string</td><td>—</td><td>OpenAI 兼容地址，如 <code>http://host:21436/v1</code></td></tr>
+      <tr><td><code>api_key</code></td><td>string</td><td><code>""</code></td><td>API Key</td></tr>
+      <tr><td><code>model_name</code></td><td>string</td><td>—</td><td>模型名，如 <code>minicpm-v:latest</code></td></tr>
+      <tr><td><code>max_concurrency</code></td><td>int</td><td><code>5</code></td><td>并发描述的场景数</td></tr>
+      <tr><td><code>request_timeout</code></td><td>int</td><td><code>120</code></td><td>单次请求超时秒数</td></tr>
+    </table>
+
+    <p><strong>请求示例</strong></p>
+<pre><code>{
+  "structure_job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+  "force": false,
+  "model_cfg": {
+    "base_url": "http://10.144.144.232:21436/v1",
+    "api_key": "sk-xxx",
+    "model_name": "minicpm-v:latest",
+    "max_concurrency": 20,
+    "request_timeout": 120
+  }
+}</code></pre>
+
+    <p><strong>响应体（<code>data</code> = <code>JobSubmitResponse</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "9d8c7b6a-5e4f-4a3b-8c2d-1f0e9d8c7b6a",
+    "status": "queued",
+    "poll_url": "/api/v2/video/describe/jobs/9d8c7b6a-5e4f-4a3b-8c2d-1f0e9d8c7b6a"
+  }
+}</code></pre>
+
+    <h3><span class="method get">GET</span> <code>/api/v2/video/describe/jobs/{job_id}</code></h3>
+    <p><strong>响应体（<code>data</code> = <code>JobStatusResponse</code>，<code>result</code> = <code>SceneDescriptionResult</code>）</strong></p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {
+    "job_id": "9d8c7b6a-5e4f-4a3b-8c2d-1f0e9d8c7b6a",
+    "type": "describe",
+    "status": "succeeded",
+    "created_at": 1767225700,
+    "started_at": 1767225701,
+    "finished_at": 1767225745,
+    "attempt": 1,
+    "result": {
+      "structure_job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+      "video_hash": "3f2a1c...",
+      "descriptions": [
+        {
+          "scene_index": 0,
+          "grid_image": "scene_001.jpg",
+          "description": "画面中一位主持人站在演播厅中央……",
+          "status": "ok",
+          "error": null
+        },
+        {
+          "scene_index": 1,
+          "grid_image": "scene_002.jpg",
+          "description": "",
+          "status": "failed",
+          "error": "大模型调用失败: timeout"
+        }
+      ],
+      "warnings": []
+    },
+    "error": null
+  }
+}</code></pre>
+    <div class="note">
+      <code>descriptions[].status</code>：<code>ok</code> / <code>skipped</code>（已有描述且未 <code>force</code>）/ <code>failed</code>。
+      单个场景失败不影响整体 job，job 仍为 <code>succeeded</code>。
+    </div>
+  </section>
+
+  <section id="response">
+    <h2>响应结构与错误码</h2>
+
+    <h3>统一信封</h3>
+<pre><code>{
+  "code": 0,              // 0 = 成功，非 0 = 业务错误码
+  "msg": "操作成功",       // 失败时为错误描述
+  "data": { ... }         // 失败时为 null
+}</code></pre>
+
+    <div class="note warn">
+      <strong>业务错误也返回 HTTP 200</strong>：只有未捕获异常是 <code>500</code>、<code>/artifact</code> 是真实
+      <code>404/409/410</code>，其余错误一律 <code>HTTP 200 + code != 0</code>。
+      判断成败请<strong>只看 <code>code</code></strong>，不要只看 HTTP 状态码。
+    </div>
+
+    <p><code>GET /api/health</code> 响应体：</p>
+<pre><code>{
+  "code": 0,
+  "msg": "操作成功",
+  "data": {"status": "ok", "service": "scene-detection"}   // structure 为 "structure"
+}</code></pre>
+
+    <h3>业务错误示例</h3>
+<pre><code>{
+  "code": 70101,
+  "msg": "视频文件未找到: /photos/not-exist.mp4",
+  "data": null
+}</code></pre>
+
+    <h3>错误码表</h3>
+    <table>
+      <tr><th>code</th><th>含义</th><th>典型触发</th></tr>
+      <tr><td><code>0</code></td><td>成功</td><td>—</td></tr>
+      <tr><td><code>10001</code></td><td>对象不存在</td><td>staging / 产物已不存在（<code>/artifact</code> 时为 <code>410</code>）</td></tr>
+      <tr><td><code>10002</code></td><td>不支持的操作</td><td><code>/artifact</code> 未就绪（<code>409</code>）、job 未终态就 <code>DELETE</code>（<code>409</code>）</td></tr>
+      <tr><td><code>10004</code></td><td>参数校验失败</td><td><code>scenes</code> 与 <code>detect_job_id</code> 都没传</td></tr>
+      <tr><td><code>70101</code></td><td>视频文件未找到</td><td>非 URL 的 <code>video_path</code> 在服务端不存在</td></tr>
+      <tr><td><code>70201</code></td><td>任务不存在</td><td><code>job_id</code> 或 <code>detect_job_id</code> 查不到</td></tr>
+      <tr><td><code>10000</code></td><td>外部服务调用失败</td><td>LLM / 下游不可用</td></tr>
+      <tr><td><code>99999</code></td><td>未捕获异常</td><td>HTTP <code>500</code></td></tr>
+    </table>
+
+    <h3>Job 状态与 job 级错误</h3>
+    <p><code>data.status</code>：<code>queued</code> → <code>running</code> → <code>succeeded</code> / <code>failed</code>。</p>
+    <p><code>data.error</code> 结构：<code>{code, message, detail}</code>，<code>code</code> 取值：</p>
+    <table>
+      <tr><th>job type</th><th>error.code</th></tr>
+      <tr><td><code>scene_detect</code></td><td><code>SCENE_DETECT_ERROR</code></td></tr>
+      <tr><td><code>structure</code></td><td><code>STRUCTURE_ERROR</code></td></tr>
+      <tr><td><code>describe</code></td><td><code>DESCRIBE_ERROR</code></td></tr>
+    </table>
+    <div class="note">
+      <code>created_at</code> / <code>started_at</code> / <code>finished_at</code> 均为 Unix 秒（int），未发生时为 <code>null</code>。
+      轮询间隔建议 2–5 秒。
+    </div>
+  </section>
+
+  <section id="video-path">
+    <h2>video_path 规则（推荐 URL）</h2>
+
+    <p><code>video_path</code> 支持三种写法，<strong>强烈推荐 <code>http(s)://</code> URL</strong>：</p>
+    <table>
+      <tr><th>形式</th><th>处理</th><th>评价</th></tr>
+      <tr>
+        <td><code>http://</code> / <code>https://</code></td>
+        <td>原样透传给 ffmpeg/ffprobe 流式读取（自动附加 <code>-rw_timeout</code> / <code>-reconnect*</code> 重连参数）</td>
+        <td><strong>推荐</strong>。只需网络可达，不依赖共享卷与路径一致性</td>
+      </tr>
+      <tr>
+        <td>绝对路径 <code>/xxx</code></td>
+        <td>直接使用，需该路径在<strong>服务端容器内</strong>存在且可读</td>
+        <td>仅单容器自测；跨容器需两边挂载同一卷且路径完全一致</td>
+      </tr>
+      <tr>
+        <td>相对路径</td>
+        <td>拼到服务端 <code>DATA_BASE_PATH</code> 下</td>
+        <td>兼容旧模式，不推荐新接入使用</td>
+      </tr>
+    </table>
+
+    <div class="note">
+      <strong>为什么推荐把视频暴露成 URL</strong>：scene-detect 与 structure 是两个<strong>独立容器</strong>，
+      而且可能都不与调用方同机。传本地路径意味着调用方、scene-detect、structure 三方的挂载点与路径必须完全一致，
+      任何一方部署形态变化（换卷、换宿主、走网关）都会导致 <code>70101 视频文件未找到</code>。
+      把视频暴露成一个 <code>http(s)</code> 地址后，本服务只需要<strong>网络可达</strong>即可读取，
+      与目录挂载彻底解耦，跨容器、跨主机、跨网关都能直接工作。
+    </div>
+
+    <h3>URL 形态的要求</h3>
+    <ul>
+      <li><strong>从服务端容器发起访问</strong>：URL 必须能在 scene-detect / structure 容器内访问。VOS 同机部署一般走
+        <code>172.17.0.1</code>（docker0 网关）访问宿主端口，<strong>不要写 <code>localhost</code>/<code>127.0.0.1</code></strong>，那会指向容器自己。</li>
+      <li><strong>返回真实视频流</strong>：<code>Content-Type</code> 为视频类型或直接下载，不要返回 HTML 登录页/跳转页。</li>
+      <li><strong>建议支持 Range</strong>：ffmpeg 会做 seek；不支持 Range 时退化为顺序流，仍可处理但更慢。</li>
+      <li><strong>有效期要覆盖任务时长</strong>：URL 在 <code>queued → running</code> 全程都要有效；带签名 token 的 URL 请把有效期放宽到小时级。</li>
+      <li><strong>token 会被脱敏</strong>：URL 中 <code>token=</code> 参数在日志与去重哈希里统一替换为 <code>token=***</code>，
+        轮换 token 不会导致重复计算，也不会泄漏到日志。</li>
+    </ul>
+
+    <h3>如何把视频暴露成 URL</h3>
+    <p>调用方（如 VOS 媒体服务）自行提供一个可匿名/带 token 访问的视频流端点即可，本服务不限制实现方式。常见做法：</p>
+    <table>
+      <tr><th>做法</th><th>示例</th><th>适用</th></tr>
+      <tr>
+        <td>媒体服务已有的流式接口</td>
+        <td><code>http://172.17.0.1:38085/api/media/123/stream</code></td>
+        <td>推荐，零改造</td>
+      </tr>
+      <tr>
+        <td>对象存储直链 / 预签名 URL</td>
+        <td><code>https://minio:9000/bucket/a.mp4?X-Amz-Signature=...</code></td>
+        <td>已有 OSS/S3/MinIO</td>
+      </tr>
+      <tr>
+        <td>静态文件服务</td>
+        <td><code>python -m http.server</code> / <code>nginx</code> 把视频目录挂成 HTTP</td>
+        <td>临时联调</td>
+      </tr>
+      <tr>
+        <td>带鉴权时</td>
+        <td><code>...?token=xxx</code></td>
+        <td>token 自动脱敏，不影响去重</td>
+      </tr>
+    </table>
+
+<pre><code># 推荐：URL
+{"video_path": "http://172.17.0.1:38085/api/media/123/stream"}
+
+# 仅单容器自测：绝对路径（需容器内可见）
+{"video_path": "/photos/library/abc.mp4"}
+
+# 旧模式：相对路径（拼到 DATA_BASE_PATH 下）
+{"video_path": "library/abc.mp4"}</code></pre>
+
+    <div class="note warn">
+      非 URL 的 <code>video_path</code> 会做本地 <code>is_file()</code> 校验，不存在直接返回
+      <code>code=70101 视频文件未找到</code>；URL 不做存在性预检，读取失败会体现在 job 的 <code>error.message</code> 里。
+    </div>
+
+    <h3>URL 对去重的影响</h3>
+    <p><code>video_path</code> 决定 <code>video_hash</code>，进而决定任务复用：</p>
+    <table>
+      <tr><th>来源</th><th>video_hash 算法</th><th>效果</th></tr>
+      <tr><td>本地路径</td><td>内容采样 MD5（3 点 × 16KB）</td><td>内容相同即复用，但<strong>要求服务端能读到文件</strong></td></tr>
+      <tr><td><code>http(s)</code> URL</td><td>脱敏 URL 的 SHA-256</td><td>URL 相同即复用，<strong>不读视频</strong>，提交立即返回</td></tr>
+    </table>
+    <div class="note">
+      因此同一份视频请<strong>始终用同一个 URL</strong>（不要每次生成不同签名的临时链），否则会被当作不同视频重复计算。
+    </div>
+  </section>
+
+  <section id="lifecycle">
+    <h2>任务生命周期</h2>
+    <div class="card">
+      <div class="grid2">
+        <div class="kv">
+          <div><span>提交去重</span><span>相同 video_hash 的未完成任务会被复用</span></div>
+          <div><span>video_hash（本地）</span><span>内容采样 MD5</span></div>
+          <div><span>video_hash（URL）</span><span>脱敏 URL 的 SHA-256</span></div>
+        </div>
+        <div class="kv">
+          <div><span>队列</span><span>Huey + SQLite（服务内嵌 worker）</span></div>
+          <div><span>job 保留期</span><span>7 天（JOB_TTL_DAYS，0=不清理）</span></div>
+          <div><span>staging 保留期</span><span>STAGING_TTL_SEC：compose 7 天，代码默认 6 小时</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="artifact">
+    <h2>产物与释放</h2>
+<pre><code>structure-{job_id}.tar
+├── manifest.json        # 最后写入，产物完整性标志
+├── grids/scene_001.jpg  # 每场景一张九宫格
+└── descriptions.json    # 可选，describe succeeded 后才纳入</code></pre>
+    <p>交付模型是 <strong>Pull</strong>：服务端只暂存，调用方下载后调 <code>DELETE</code> 释放。超时未取由 worker 周期清理。</p>
+    <div class="note">
+      staging 目录里还有 <code>metadata.json</code>，但它与 <code>manifest.json</code> 冗余，<strong>不打包进 tar</strong>；
+      需要元数据请读 <code>manifest.json</code> 的 <code>metadata</code> 字段或状态接口的 <code>result.metadata</code>。
+    </div>
+
+    <p><code>manifest.json</code> 结构：</p>
+<pre><code>{
+  "version": 1,
+  "video_hash": "3f2a1c...",
+  "metadata": {
+    "video_path": "http://172.17.0.1:38085/api/media/123/stream",
+    "fps": 25.0, "duration": 480.0, "width": 1920, "height": 1080,
+    "codec": "h264", "bitrate": 5242880, "has_audio": true, "total_frames": 12000
+  },
+  "scenes": [
+    {
+      "scene_id": "a1b2c3d4-...-0", "scene_index": 0,
+      "start_time": 0.0, "end_time": 4.96,
+      "start_frame": 0, "end_frame": 124,
+      "grid_image": "scene_001.jpg"
+    }
+  ],
+  "warnings": [],
+  "stage_timings": {"metadata": 0.31, "frame_grid": 38.2, "total": 41.05},
+  "elapsed_sec": 41.05,
+  "created_at": 1767225642
+}</code></pre>
+
+    <p><code>descriptions.json</code> 由 describe 写入，内容对应状态接口 <code>result.descriptions[]</code>。</p>
+    <div class="note warn">
+      staging 目录路径存在 job 的 <code>result_ref</code> 里，依赖共享卷。容器内路径为 <code>STAGING_BASE_PATH/&lt;job_id&gt;</code>。
+    </div>
+  </section>
+
+  <section id="config">
+    <h2>服务端配置（接入方一般无需改动）</h2>
+    <table>
+      <tr><th>环境变量</th><th>默认值</th><th>说明</th></tr>
+      <tr><td><code>DATA_BASE_PATH</code></td><td><code>/photos</code></td><td>相对 video_path 的根；<strong>传 URL 时该配置不生效</strong></td></tr>
+      <tr><td><code>STAGING_BASE_PATH</code></td><td><code>/data/video-structure-cache</code></td><td>产物暂存根（共享卷）</td></tr>
+      <tr><td><code>STAGING_TTL_SEC</code></td><td><code>604800</code></td><td>staging 过期秒数（代码默认 21600）</td></tr>
+      <tr><td><code>VIDEO_DETECT_SCALE_WIDTH</code></td><td><code>640</code></td><td>检测缩放宽度</td></tr>
+      <tr><td><code>VIDEO_DECODE_THREADS</code></td><td><code>0</code></td><td><code>0</code>=auto</td></tr>
+      <tr><td><code>HUEY_WORKERS</code></td><td><code>2</code></td><td>worker 并发（代码默认 4）</td></tr>
+      <tr><td><code>JOB_TTL_DAYS</code></td><td><code>7</code></td><td>job 行保留天数，<code>0</code>=不清理</td></tr>
+      <tr><td><code>LLM_BASE_URL</code> / <code>LLM_API_KEY</code> / <code>LLM_MODEL_NAME</code></td><td>—</td><td>describe 默认模型，可被请求体 <code>model_cfg</code> 覆盖</td></tr>
+      <tr><td><code>LLM_MAX_CONCURRENCY</code> / <code>LLM_REQUEST_TIMEOUT</code></td><td><code>5</code> / <code>120</code></td><td>describe 并发与超时</td></tr>
+    </table>
+  </section>
+
+  <section id="checklist">
+    <h2>接入检查清单</h2>
+    <div class="card">
+      <ul>
+        <li>在调用方 <code>configs.yml</code> 或应用接入内配置，声明两个 base url（scene / structure），默认值填 <code>http://172.17.0.1:48910</code> 与 <code>:48911</code>。</li>
+        <li>把视频暴露成 <code>http(s)://</code> URL 传入，并确认该 URL 在<strong>服务端容器</strong>内可访问（VOS 同机经 <code>172.17.0.1</code>，不要写 <code>localhost</code>）。</li>
+        <li>同一份视频<strong>固定使用同一个 URL</strong>（不要每次生成新签名），否则去重失效、重复计算。</li>
+        <li>判断成败<strong>只看响应体 <code>code</code></strong>：业务错误也是 HTTP <code>200</code>。</li>
+        <li>轮询间隔建议 2–5 秒；<code>/artifact</code> 返回 <code>409</code> 视为"继续等"，不要当失败。</li>
+        <li>下载 tar 后立即 <code>DELETE</code> 释放 staging，避免占满共享卷。</li>
+        <li>本服务无鉴权，VOS 内网可达；如需对外暴露请自行在网关加鉴权中间件。</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>video-instruction · 接入文档 · 接口以服务端 OpenAPI（<code>/docs</code>）为准</footer>
+
+  </main>
+</div>
+</div>
+
+</body>
+</html>

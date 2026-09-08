@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.jobs import init_db
 from shared.middlewares import add_exception_handlers, add_request_context_middleware
+from shared.utils.docs_page import mount_docs
 from structure.api.routes import router as structure_router
 from structure.core.settings import settings
 
@@ -37,6 +38,7 @@ def create_application() -> FastAPI:
     )
 
     application.include_router(structure_router)
+    mount_docs(application)
 
     return application
 

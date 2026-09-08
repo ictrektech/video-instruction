@@ -8,6 +8,7 @@ from scene_detect.api.routes import router as detection_router
 from scene_detect.core.settings import settings
 from shared.jobs import init_db
 from shared.middlewares import add_exception_handlers, add_request_context_middleware
+from shared.utils.docs_page import mount_docs
 
 logger = getLogger(__name__)
 
@@ -37,6 +38,7 @@ def create_application() -> FastAPI:
     )
 
     application.include_router(detection_router)
+    mount_docs(application)
 
     return application
 
