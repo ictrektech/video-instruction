@@ -21,7 +21,7 @@ _db_path = Path(settings.huey_db_path)
 _db_path.parent.mkdir(parents=True, exist_ok=True)
 
 huey = SqliteHuey(
-    "video-instruction",
+    "video-structure",
     filename=str(_db_path),
     results=True,
     store_none=False,

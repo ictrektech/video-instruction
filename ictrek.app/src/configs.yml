@@ -1,0 +1,66 @@
+# ===========================================================================
+# video-structure 声明式应用配置定义
+# ===========================================================================
+# VOS 平台安装时解析本文件，向用户收集输入，校验后以 KEY=VALUE 写入 .env，
+# 并通过 `docker compose --env-file` 注入容器。
+#
+# 原则：只收集必要项。
+#   - 端口：平台端口分配需用户感知
+#   - LLM：describe 依赖外部 VLM 服务，环境相关，必须可配
+#   其余参数（Worker 并发、产物 TTL、检测管道等）使用服务端内置默认值。
+# ===========================================================================
+
+configs:
+  - name: VIDEO_STRUCTURE_DETECT_PORT
+    type: integer
+    title:
+      zh-CN: 场景检测服务端口
+      en: Scene Detection Port
+    description:
+      zh-CN: 场景检测容器映射到宿主机的端口（直连 http://<host>:<port>）
+      en: Host port for the scene detection container (direct access http://<host>:<port>)
+    default: 48910
+    minimum: 1024
+    maximum: 65535
+
+  - name: VIDEO_STRUCTURE_PORT
+    type: integer
+    title:
+      zh-CN: 结构化服务端口
+      en: Structure Port
+    description:
+      zh-CN: 结构化容器映射到宿主机的端口（直连 http://<host>:<port>）
+      en: Host port for the structure container (direct access http://<host>:<port>)
+    default: 48911
+    minimum: 1024
+    maximum: 65535
+
+  - name: VIDEO_STRUCTURE_LLM_BASE_URL
+    type: string
+    title:
+      zh-CN: LLM API 地址
+      en: LLM Base URL
+    description:
+      zh-CN: OpenAI 兼容 VLM 服务地址（describe 功能）；请求体 model_cfg 可覆盖
+      en: OpenAI-compatible VLM endpoint (describe); overridable via request model_cfg
+    default: "http://10.144.144.232:21436/v1"
+
+  - name: VIDEO_STRUCTURE_LLM_API_KEY
+    type: string
+    title:
+      zh-CN: LLM API Key
+      en: LLM API Key
+    description:
+      zh-CN: LLM 服务密钥（敏感字段，平台以密文展示）
+      en: LLM API key (sensitive; displayed as ciphertext by platform)
+    default: ""
+
+  - name: VIDEO_STRUCTURE_LLM_MODEL_NAME
+    type: string
+    title:
+      zh-CN: LLM 模型名称
+      en: LLM Model Name
+    description:
+      zh-CN: describe 功能使用的视觉模型名称
+      en: Vision model name used by the describe feature
+    default: "minicpm-v:latest"

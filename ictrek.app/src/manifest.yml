@@ -1,0 +1,48 @@
+id: com.ictrek.video-structure
+name:
+  zh-CN: 视频结构化
+  en: Video Structure
+description:
+  zh-CN: 提供视频场景检测与视频结构化 HTTP 服务（异步 Job + 轮询 + 产物 Pull 交付），供 VOS 平台内其他应用接入；内置场景九宫格生成与可选 VLM 场景描述，视频通过 http(s) URL 流式读取。
+  en: Provides video scene detection and video structuring HTTP services (async job + polling + pull-based artifact delivery) for other VOS apps; includes scene grid generation and optional VLM scene descriptions. Videos are streamed via http(s) URLs.
+version: __APP_VERSION__
+author: ictrek
+category: [ai]
+arch: [amd64, arm64]
+
+frontend:
+  enabled: true
+  basePath: /app/com.ictrek.video-structure
+
+platform:
+  version: ">=3.0.0"
+
+profiles:
+  - name: amd
+    title:
+      zh-CN: AMD64
+      en: AMD64
+    description:
+      zh-CN: 适用于 AMD64 VOS 主机。
+      en: For AMD64 VOS hosts.
+    conflicts: [arm]
+  - name: arm
+    title:
+      zh-CN: ARM64
+      en: ARM64
+    description:
+      zh-CN: 适用于 ARM64 VOS 主机。
+      en: For ARM64 VOS hosts.
+    conflicts: [amd]
+
+storage:
+  directories:
+    # data：scene-detect 与 structure 共享的 jobs/队列 SQLite（huey.db），必须同卷、同宿主
+    # staging：structure 产物暂存（两容器对等 worker 都可能写入）
+    # logs：服务日志
+    - path: data
+      mode: "0755"
+    - path: staging
+      mode: "0755"
+    - path: logs
+      mode: "0755"

@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """结构化服务配置"""
 
-    app_title: str = Field("video-instruction - structure", description="应用名称")
+    app_title: str = Field("video-structure", description="应用名称")
     app_version: str = Field("0.1.0", description="应用版本")
     app_port: int = Field(8911, description="服务端口")
     app_env: str = Field("dev", description="运行环境，例如 dev/test/prod")

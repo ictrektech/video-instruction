@@ -1,0 +1,30 @@
+# ===========================================================================
+# video-structure 前端导航路由定义
+# ===========================================================================
+# 平台前端加载本文件生成导航菜单，用户点击菜单后以同域 iframe 加载 iframe-src。
+# 约束：group 只能含 children；page 必须 iframe-src、禁止 children。
+#
+# Traefik（compose labels）将 /app/com.ictrek.video-structure 剥前缀后转发到
+# video-structure 容器（8911），页面路径 /doc/integration.html 由其静态路由提供。
+# ===========================================================================
+
+routers:
+  - id: com-ictrek-video-structure
+    kind: group
+    title:
+      zh-CN: 视频结构化
+      en: Video Structure
+    icon: lucide:video
+    order: 260
+    children:
+      - id: integration-doc
+        kind: page
+        title:
+          zh-CN: 接入文档
+          en: Integration Guide
+        icon: lucide:book-open
+        iframe-src: /app/com.ictrek.video-structure/doc/integration.html
+        order: 10
+        keep-alive: true
+        entry-point: true
+        embed: true

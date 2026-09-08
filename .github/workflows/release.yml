@@ -1,0 +1,156 @@
+name: VOS Pull Package Release
+
+# 发布 tag（由 ictrek.app/scripts/update_version.sh 创建并推送）触发：
+# 打包（镜像引用从飞书发布表解析）→ 挂 GitHub Release → 自动上架 VOS App Store（可选）。
+# 镜像不在此构建：amd/arm 镜像由构建机经 docker/build_image.sh 预先推送并登记飞书。
+on:
+  push:
+    tags: ["vos-video-structure-v*"]
+
+permissions:
+  contents: write # 创建 GitHub Release 并附带产物
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # package.sh 需要从飞书发布表读取各组件最新镜像 tag。
+      # Secrets：FEISHU_APP_ID / FEISHU_APP_SECRET（飞书应用凭据），
+      #          FEISHU_SPREADSHEET_TOKEN（可选，覆盖发布表 token 默认值）
+      - name: Write Feishu credentials
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        run: |
+          test -n "${FEISHU_APP_ID:-}" || { echo "Secret FEISHU_APP_ID 未配置" >&2; exit 1; }
+          test -n "${FEISHU_APP_SECRET:-}" || { echo "Secret FEISHU_APP_SECRET 未配置" >&2; exit 1; }
+          cat > "$HOME/.feishu.json" <<EOF
+          {"feishu_app_id": "${FEISHU_APP_ID}", "feishu_app_secret": "${FEISHU_APP_SECRET}"}
+          EOF
+
+      # package.sh 的 YAML 校验依赖 PyYAML（缺失时脚本会降级为跳过校验）
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      # 包版本必须与触发 tag 一致（tag: vos-video-structure-v0.1.1 -> 0.1.1）
+      - name: Build pull-mode package
+        env:
+          FEISHU_SPREADSHEET_TOKEN: ${{ secrets.FEISHU_SPREADSHEET_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#vos-video-structure-v}"
+          PACKAGE_VERSION="${VERSION}" ./ictrek.app/scripts/package.sh
+          test -f "ictrek.app/dist/video-structure_${VERSION}_pull.tar"
+
+      - name: Create release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_PREFIX: vos-video-structure-v
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#vos-video-structure-v}"
+          CURRENT="${GITHUB_REF_NAME}"
+          PUBLIC_TAG="v${VERSION}"
+          export PUBLIC_TAG
+          PREVIOUS="$(gh release list --limit 100 --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName != env.PUBLIC_TAG) | select((.tagName | startswith("v")) or (.tagName | startswith(env.TAG_PREFIX)))] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')"
+          {
+            echo "Pull-mode VOS app package for com.ictrek.video-structure."
+            echo
+            if [[ -n "$PREVIOUS" ]]; then
+              echo "Changes since ${PREVIOUS}:"
+              git log --no-merges --pretty='- %s (%h)' "${PREVIOUS}..${CURRENT}"
+            else
+              echo "Initial VOS package release."
+              git log --no-merges --pretty='- %s (%h)' -20 "${CURRENT}"
+            fi
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#vos-video-structure-v}"
+          PUBLIC_TAG="v${VERSION}"
+          if ! git ls-remote --exit-code --tags origin "refs/tags/${PUBLIC_TAG}" >/dev/null 2>&1; then
+            git tag "${PUBLIC_TAG}" "${GITHUB_SHA}"
+            git push origin "${PUBLIC_TAG}"
+          fi
+          gh release create "${PUBLIC_TAG}" "ictrek.app/dist/video-structure_${VERSION}_pull.tar" \
+            --verify-tag \
+            --latest \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md
+
+      # 自动上架 VOS App Store（通过 SSH 隧道调用 App Store 发布 API）。
+      # 未配置 APPSTORE_IP / APPSTORE_TOKEN 时跳过（产物仍可从 GitHub Release 手动上架）。
+      - name: Publish package to VOS App Store
+        if: env.APPSTORE_IP != '' && env.APPSTORE_TOKEN != ''
+        env:
+          APPSTORE_IP: ${{ secrets.APPSTORE_IP }}
+          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#vos-video-structure-v}"
+          PACKAGE="ictrek.app/dist/video-structure_${VERSION}_pull.tar"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keyscan -H -p 32222 "$APPSTORE_IP" >> "$HOME/.ssh/known_hosts"
+
+          askpass="$RUNNER_TEMP/vos-appstore-askpass.sh"
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$APPSTORE_TOKEN"
+          EOF
+          chmod 700 "$askpass"
+          export SSH_ASKPASS="$askpass"
+          export SSH_ASKPASS_REQUIRE=force
+          export DISPLAY=:0
+
+          control_socket="$RUNNER_TEMP/vos-appstore-ssh.sock"
+          trap 'ssh -S "$control_socket" -O exit -p 32222 "tunneluser@$APPSTORE_IP" >/dev/null 2>&1 || true' EXIT
+
+          ssh \
+            -M \
+            -S "$control_socket" \
+            -f \
+            -N \
+            -L 18899:127.0.0.1:18090 \
+            -p 32222 \
+            -o BatchMode=no \
+            -o ExitOnForwardFailure=yes \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            "tunneluser@$APPSTORE_IP" </dev/null
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:18899/api/health" >/dev/null; then
+              ready=true
+              break
+            fi
+            if ! ssh -S "$control_socket" -O check -p 32222 "tunneluser@$APPSTORE_IP" >/dev/null 2>&1; then
+              echo "VOS App Store SSH tunnel exited before becoming ready." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          [[ "$ready" == true ]] || { echo "VOS App Store SSH tunnel did not become ready." >&2; exit 1; }
+
+          publish_response="$(curl -kfsS -F "package=@${PACKAGE}" -F "force=true" "http://127.0.0.1:18899/api/appstore/apps")"
+          RESPONSE="$publish_response" python3 - <<'PY'
+          import json, os, sys
+          payload = json.loads(os.environ["RESPONSE"])
+          if payload.get("code") != 0:
+              print(payload, file=sys.stderr)
+              raise SystemExit("App Store publish failed")
+          data = payload.get("data") or {}
+          print(f"Published {data.get('app_id')}@{data.get('version')} to VOS App Store")
+          PY

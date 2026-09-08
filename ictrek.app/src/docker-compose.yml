@@ -1,0 +1,184 @@
+# ===========================================================================
+# video-structure Docker Compose（VOS pull 模式）
+# ===========================================================================
+# pull 模式：包内只有本文件 + manifest/configs/routers/README，镜像名写入包内
+# .env（打包时由 scripts/package.sh 注入），平台安装时从 registry 拉取。
+#
+# 部署形态：一个应用，两个容器，共用同一个镜像
+#   - video-structure-detect：场景检测 API + 内嵌 Huey worker（8910）
+#   - video-structure        ：结构化 API + 内嵌 Huey worker（8911）
+#   同一镜像靠 command（scene-detect / structure）与 APP_PORT 区分角色。
+#
+# 共享卷（硬依赖，拆分即失效）：
+#   - data/    ：jobs 表 + Huey 队列共用同一个 SQLite（huey.db）。
+#     structure 通过 detect_job_id 直接读 scene-detect 写入的 jobs 行，
+#     且两容器 worker 对等注册全部任务类型，必须挂同一 data 卷、调度到同一宿主。
+#   - staging/ ：structure 产物暂存（两容器都可写）
+#   - logs/    ：服务日志（按容器分目录）
+#
+# 路由（docker labels + vos_default 网络）：
+#   - /api/com.ictrek.video-structure/detect/**    → detect:8910
+#   - /api/com.ictrek.video-structure/structure/** → structure:8911
+#   - /app/com.ictrek.video-structure/**           → structure:8911（接入文档页）
+#
+# 镜像变量由 package.sh 渲染：${VIDEO_STRUCTURE_AMD_IMAGE} / ${VIDEO_STRUCTURE_ARM_IMAGE}
+# __APP_VERSION__ 为版本占位符，打包时替换为 ictrek.app/VERSION
+# ===========================================================================
+
+x-detect-env: &detect-env
+  APP_VERSION: "__APP_VERSION__"
+  TZ: "${TZ:-Asia/Shanghai}"
+  APP_ENV: prod
+  APP_PORT: "8910"
+  # 兼容相对路径模式（推荐调用方传 http(s) URL，该配置不生效）
+  DATA_BASE_PATH: /photos
+  STAGING_BASE_PATH: /data/video-structure-cache
+  # 以下为服务端固定默认值，不做安装期配置
+  STAGING_TTL_SEC: "604800"
+  VIDEO_DETECT_SCALE_WIDTH: "640"
+  VIDEO_DECODE_THREADS: "0"
+  # 注意：HUEY_WORKERS 环境变量当前无效（run_worker 只认 --workers CLI 参数），
+  # 并发由下方 command 的 --workers 决定
+  # 限制 OpenMP 线程池，避免 OpenCV/scenedetect 创建数百个 idle 线程
+  OMP_NUM_THREADS: "1"
+  OPENCV_OPENMP_NUM_THREADS: "1"
+
+x-structure-env: &structure-env
+  APP_VERSION: "__APP_VERSION__"
+  TZ: "${TZ:-Asia/Shanghai}"
+  APP_ENV: prod
+  APP_PORT: "8911"
+  DATA_BASE_PATH: /photos
+  STAGING_BASE_PATH: /data/video-structure-cache
+  STAGING_TTL_SEC: "604800"
+  VIDEO_GRID_FFMPEG_THREADS: "0"
+  # describe 默认模型（请求体 model_cfg 可覆盖；默认值与 configs.yml 保持一致）
+  LLM_BASE_URL: "${VIDEO_STRUCTURE_LLM_BASE_URL:-http://10.144.144.232:21436/v1}"
+  LLM_API_KEY: "${VIDEO_STRUCTURE_LLM_API_KEY:-}"
+  LLM_MODEL_NAME: "${VIDEO_STRUCTURE_LLM_MODEL_NAME:-minicpm-v:latest}"
+  LLM_MAX_CONCURRENCY: "20"
+  LLM_REQUEST_TIMEOUT: "120"
+  OMP_NUM_THREADS: "1"
+  OPENCV_OPENMP_NUM_THREADS: "1"
+
+x-detect-base: &detect-base
+  restart: unless-stopped
+  pull_policy: always
+  user: "0:0"
+  networks:
+    vos_default:
+      aliases:
+        - video-structure-detect
+  environment: *detect-env
+  command:
+    - bash
+    - -c
+    - |
+      set -e
+      scene-detect-worker --workers 2 &
+      exec scene-detect
+  ports:
+    - "${VIDEO_STRUCTURE_DETECT_PORT:-48910}:8910"
+  volumes:
+    - ${VOS_APP_STORAGE_PATH}/data:/app/data
+    - ${VOS_APP_STORAGE_PATH}/staging:/data/video-structure-cache
+    # 日志按容器分目录：每个容器内有 API + worker 两个进程，
+    # 共用同一个 /app/log/server.log 会因 RotatingFileHandler 非多进程安全而轮转竞态
+    - ${VOS_APP_STORAGE_PATH}/logs/video-structure-detect:/app/log
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=vos_default"
+    # ---- 场景检测 API ----
+    - "traefik.http.routers.video-structure-detect.rule=PathPrefix(`/api/com.ictrek.video-structure/detect`)"
+    - "traefik.http.routers.video-structure-detect.service=video-structure-detect"
+    - "traefik.http.routers.video-structure-detect.middlewares=video-structure-detect-strip"
+    - "traefik.http.middlewares.video-structure-detect-strip.stripprefix.prefixes=/api/com.ictrek.video-structure/detect"
+    - "traefik.http.services.video-structure-detect.loadbalancer.server.port=8910"
+  healthcheck:
+    test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8910/api/health', timeout=5).read()\" > /dev/null 2>&1 || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+
+x-structure-base: &structure-base
+  restart: unless-stopped
+  pull_policy: always
+  user: "0:0"
+  networks:
+    vos_default:
+      aliases:
+        - video-structure
+  environment: *structure-env
+  command:
+    - bash
+    - -c
+    - |
+      set -e
+      structure-worker --workers 2 &
+      exec structure
+  ports:
+    - "${VIDEO_STRUCTURE_PORT:-48911}:8911"
+  volumes:
+    - ${VOS_APP_STORAGE_PATH}/data:/app/data
+    - ${VOS_APP_STORAGE_PATH}/staging:/data/video-structure-cache
+    - ${VOS_APP_STORAGE_PATH}/logs/video-structure:/app/log
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=vos_default"
+    # ---- 结构化 / describe API ----
+    - "traefik.http.routers.video-structure-api.rule=PathPrefix(`/api/com.ictrek.video-structure/structure`)"
+    - "traefik.http.routers.video-structure-api.service=video-structure-api"
+    - "traefik.http.routers.video-structure-api.middlewares=video-structure-api-strip"
+    - "traefik.http.middlewares.video-structure-api-strip.stripprefix.prefixes=/api/com.ictrek.video-structure/structure"
+    - "traefik.http.services.video-structure-api.loadbalancer.server.port=8911"
+    # ---- 接入文档页（frontend.basePath）----
+    - "traefik.http.routers.video-structure-web.rule=PathPrefix(`/app/com.ictrek.video-structure`)"
+    - "traefik.http.routers.video-structure-web.service=video-structure-web"
+    - "traefik.http.routers.video-structure-web.middlewares=video-structure-web-slash,video-structure-web-strip"
+    - "traefik.http.middlewares.video-structure-web-slash.redirectregex.regex=^(.*)/app/com\\.ictrek\\.video-structure$"
+    - "traefik.http.middlewares.video-structure-web-slash.redirectregex.replacement=$${1}/app/com.ictrek.video-structure/"
+    - "traefik.http.middlewares.video-structure-web-slash.redirectregex.permanent=true"
+    - "traefik.http.middlewares.video-structure-web-strip.stripprefix.prefixes=/app/com.ictrek.video-structure"
+    - "traefik.http.services.video-structure-web.loadbalancer.server.port=8911"
+    # ---- 顶层直接打开兜底：重定向到平台 hash 路由 ----
+    - "traefik.http.routers.video-structure-top-open.rule=PathPrefix(`/app/com.ictrek.video-structure`) && HeadersRegexp(`Sec-Fetch-Dest`, `document`)"
+    - "traefik.http.routers.video-structure-top-open.priority=1000"
+    - "traefik.http.routers.video-structure-top-open.service=video-structure-web"
+    - "traefik.http.routers.video-structure-top-open.middlewares=video-structure-top-open-redirect"
+    - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.regex=^(https?://[^/]+)/app/com\\.ictrek\\.video-structure/?(?:\\?.*)?$"
+    - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.replacement=$${1}/#/app/com.ictrek.video-structure/com-ictrek-video-structure/integration-doc"
+    - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.permanent=false"
+  healthcheck:
+    test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8911/api/health', timeout=5).read()\" > /dev/null 2>&1 || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+
+services:
+  # ── amd (AMD64) ──
+  video-structure-detect-amd:
+    <<: *detect-base
+    profiles: ["amd"]
+    image: ${VIDEO_STRUCTURE_AMD_IMAGE}
+
+  video-structure-amd:
+    <<: *structure-base
+    profiles: ["amd"]
+    image: ${VIDEO_STRUCTURE_AMD_IMAGE}
+
+  # ── arm (ARM64) ──
+  video-structure-detect-arm:
+    <<: *detect-base
+    profiles: ["arm"]
+    image: ${VIDEO_STRUCTURE_ARM_IMAGE}
+
+  video-structure-arm:
+    <<: *structure-base
+    profiles: ["arm"]
+    image: ${VIDEO_STRUCTURE_ARM_IMAGE}
+
+networks:
+  vos_default:
+    external: true

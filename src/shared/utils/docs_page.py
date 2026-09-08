@@ -2,7 +2,7 @@
 
 页面源文件位于 ``shared/static/integration.html``，随包分发；
 两个服务（scene-detect / structure）均通过 ``mount_docs()`` 在 ``/doc``
-路径下提供，Traefik 的 ``/app/com.ictrek.video-instruction`` 前缀剥掉后即落到这里。
+路径下提供，Traefik 的 ``/app/com.ictrek.video-structure`` 前缀剥掉后即落到这里。
 """
 
 from __future__ import annotations

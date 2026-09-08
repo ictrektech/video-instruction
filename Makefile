@@ -1,20 +1,23 @@
-# video-instruction Makefile
+# video-structure Makefile
 # Dev:  docker/docker-compose.dev.yml（源码 volume 挂载 + debugpy + --reload）
 # Prod: docker/docker-compose.yml
 #
 # 用法:
 #   make dev          启动 dev 服务
-#   make build        构建 prod 镜像（自动带平台标签）
-#   make tag          将构建版本另标为 latest-$(PLATFORM)
-#   make push         推送版本标签 + latest-$(PLATFORM) 到 registry
+#   make build        构建 VOS 发布镜像（不推送）
+#   make push         构建并推送 VOS 发布镜像
 #
-# 版本:
-#   IMAGE_TAG 环境变量覆盖镜像标签（默认 latest）
-#   BUILD_TAG 自动追加平台前缀：amd64_20260629_abc1234 / arm64_20260629_abc1234
-#   不同平台构建互不覆盖，可共存于 registry
+# 发布镜像（VOS 应用打包使用）：
+#   入口为 docker/build_image.sh（参考 image-studio docker/build_image.sh 的方式），
+#   tag 规则 {amd,arm}_${日期}_${githash}，与构建解耦；构建推送后登记飞书发布表，
+#   打包（ictrek.app/scripts/package.sh）从飞书读取各组件最新 tag。
+#   不要再走 compose build 打发布镜像，否则 tag 与打包脚本拼出的引用不一致。
+#   直接调用：./docker/build_image.sh [--no-push] [--no-feishu] [--tag X] [--base-image <swr-image>]
+#   一键发布（构建成功后）：./update_version [patch|minor|major]
+#     bump VERSION → 推分支/tag → CI 打包上架（.github/workflows/release.yml）
 
 REGISTRY ?= swr.cn-southwest-2.myhuaweicloud.com/ictrek
-IMAGE_NAME ?= video-instruction
+IMAGE_NAME ?= video-structure
 OPTS  ?=  # 传给 docker/compose 的额外参数（如 -d、--no-cache）
 
 DEV_COMPOSE  := docker/docker-compose.dev.yml
@@ -25,10 +28,7 @@ PROD_COMPOSE := docker/docker-compose.yml
 PROD_ENV_FILE := docker/.env.prod
 PROD_CMD     := docker compose --env-file $(PROD_ENV_FILE) -f $(PROD_COMPOSE)
 
-GIT_HASH   := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_DATE := $(shell date +%Y%m%d)
-PLATFORM   := $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-BUILD_TAG  := $(PLATFORM)_$(BUILD_DATE)_$(GIT_HASH)
+# 注：发布镜像的 tag 由 build_image.sh 从 ictrek.app/VERSION 推导，Makefile 不再维护 BUILD_TAG
 
 .DEFAULT_GOAL := help
 help:  ## 显示帮助
@@ -52,20 +52,13 @@ dev-ps:    ## [Dev] 查看服务状态
 
 # ── Prod ──
 
-.PHONY: build tag push prod prod-down prod-logs
+.PHONY: build push prod prod-down prod-logs
 
-build:  ## [Prod] 构建镜像 + 更新 latest-$(PLATFORM)
-	IMAGE_TAG=$(BUILD_TAG) $(PROD_CMD) build $(OPTS)
-	docker tag $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
-	docker tag $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
-tag:  ## [Prod] 将构建的版本镜像设为 latest-$(PLATFORM)（多平台互不覆盖）
-	docker tag $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
-	docker tag $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)  $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
-push:  ## [Prod] 推送版本标签 + 平台 latest 到 registry
-	docker push $(REGISTRY)/$(IMAGE_NAME)-detection:$(BUILD_TAG)
-	docker push $(REGISTRY)/$(IMAGE_NAME)-structure:$(BUILD_TAG)
-	docker push $(REGISTRY)/$(IMAGE_NAME)-detection:latest-$(PLATFORM)
-	docker push $(REGISTRY)/$(IMAGE_NAME)-structure:latest-$(PLATFORM)
+build:  ## [Prod] 构建 VOS 发布镜像（tag={amd,arm}_<日期>_<githash>，不推送）
+	./docker/build_image.sh --no-push
+
+push:  ## [Prod] 构建并推送 VOS 发布镜像到 registry
+	./docker/build_image.sh
 prod:  ## [Prod] 启动服务（加 OPTS=-d 后台运行）
 	$(PROD_CMD) up $(OPTS)
 prod-down:  ## [Prod] 停止服务

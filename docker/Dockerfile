@@ -1,4 +1,9 @@
-FROM python:3.13-slim
+# 基镜像可参数化：国内构建机建议先把 python:3.13-slim 按架构镜像到 SWR
+# （参考 image-studio docker/mirror_base_images.sh），构建时传入
+#   --build-arg PYTHON_BASE_IMAGE=${REGISTRY}/python:${arch}_3.13-slim
+# 并配合 build_image.sh 的 --pull=false，构建过程不触碰 Docker Hub
+ARG PYTHON_BASE_IMAGE=python:3.13-slim
+FROM ${PYTHON_BASE_IMAGE}
 
 # Use Tsinghua mirror for apt (faster in CN, fallback for DNS issues)
 RUN sed -i \
@@ -21,9 +26,6 @@ WORKDIR /app
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 ENV UV_INDEX_PRIORITY=always
 
-# Build arg: service name → install only that service's extra deps
-ARG SERVICE=all
-
 # Install dependencies first (layer caching)
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
@@ -32,13 +34,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ src/
 COPY config/ config/
 COPY README.md ./
-# Install all extras so any worker can process any task type
-RUN if [ "$SERVICE" = "all" ]; then \
-      uv sync --frozen --no-dev --all-extras; \
-    else \
-      uv sync --frozen --no-dev --extra scene-detect --extra structure; \
-    fi
+# 单镜像：同时包含 scene-detect 与 structure 两套运行时（两者依赖相同）。
+# 部署时两个容器共用本镜像，仅通过 command（scene-detect / structure）与 APP_PORT 区分，
+# 因此本文件不设 ENTRYPOINT/CMD——启动命令由 compose 的 command 提供。
+RUN uv sync --frozen --no-dev --extra scene-detect --extra structure
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-EXPOSE 8910
+# 8910 = scene-detect，8911 = structure；实际监听端口由容器 APP_PORT 决定
+EXPOSE 8910 8911

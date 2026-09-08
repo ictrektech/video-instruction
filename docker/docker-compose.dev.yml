@@ -1,4 +1,4 @@
-name: video-instruction-dev
+name: video-structure-dev
 
 
 
@@ -7,8 +7,6 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.dev
-      args:
-        SERVICE: scene-detect
     container_name: dev-video-detection
     profiles: ["detection"]
     ports:
@@ -22,7 +20,7 @@ services:
       # README.md for hatchling build
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
-      - video-instruction-venv-detection:/app/.venv
+      - video-structure-venv-detection:/app/.venv
       # 共享 huey.db（jobs 表 + task 队列）
       - ../data:/app/data
       # worker 也可能处理 structure 任务，需要可写的缓存目录
@@ -43,7 +41,7 @@ services:
       OMP_NUM_THREADS: "1"
       OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
-      - video-instruction-dev-net
+      - video-structure-dev-net
     restart: unless-stopped
     command:
       - bash
@@ -61,8 +59,6 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.dev
-      args:
-        SERVICE: structure
     container_name: dev-video-structure
     profiles: ["structure"]
     ports:
@@ -75,7 +71,7 @@ services:
       - ../log:/app/log
       - ../README.md:/app/README.md
       # Persist .venv across restarts (own volume per service)
-      - video-instruction-venv-structure:/app/.venv
+      - video-structure-venv-structure:/app/.venv
       # 写：集中式缓存（与输入路径解耦）
       - /data/video-structure-cache:/data/video-structure-cache
       # 共享 huey.db（jobs 表 + task 队列）
@@ -98,7 +94,7 @@ services:
       OMP_NUM_THREADS: "1"
       OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
-      - video-instruction-dev-net
+      - video-structure-dev-net
     restart: unless-stopped
     command:
       - bash
@@ -112,9 +108,9 @@ services:
         uv run structure-worker --workers ${HUEY_WORKERS:-2} &
         exec uv run structure
 volumes:
-  video-instruction-venv-detection:
-  video-instruction-venv-structure:
+  video-structure-venv-detection:
+  video-structure-venv-structure:
 
 networks:
-  video-instruction-dev-net:
+  video-structure-dev-net:
     driver: bridge

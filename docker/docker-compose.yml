@@ -1,15 +1,14 @@
-name: video-instruction
+name: video-structure
 
 
 services:
+  # 单镜像：两个服务共用同一镜像，仅 command 与 APP_PORT 不同（Dockerfile 不再按 SERVICE 区分）
   scene-detection:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      args:
-        SERVICE: scene-detect
-    image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-detection:${IMAGE_TAG:-latest}
-    container_name: video-instruction-detection
+    image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-structure:${IMAGE_TAG:-latest}
+    container_name: video-structure-detect
     command:
       - bash
       - -c
@@ -39,17 +38,15 @@ services:
       # worker 也可能处理 structure 任务，需要可写的缓存目录
       - /data/video-structure-cache:/data/video-structure-cache
     networks:
-      - video-instruction-net
+      - video-structure-net
     restart: unless-stopped
 
   structure:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      args:
-        SERVICE: structure
-    image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-instruction-structure:${IMAGE_TAG:-latest}
-    container_name: video-instruction-structure
+    image: swr.cn-southwest-2.myhuaweicloud.com/ictrek/video-structure:${IMAGE_TAG:-latest}
+    container_name: video-structure
     command:
       - bash
       - -c
@@ -80,9 +77,9 @@ services:
       - /data/video-structure-cache:/data/video-structure-cache
       - ../data:/app/data
     networks:
-      - video-instruction-net
+      - video-structure-net
     restart: unless-stopped
 
 networks:
-  video-instruction-net:
+  video-structure-net:
     driver: bridge

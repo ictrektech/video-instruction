@@ -1,4 +1,4 @@
-# video-instruction
+# video-structure
 
 > 🚀 **GitHub Template** — 点击 "Use this template" 即可创建新项目。
 >
@@ -19,18 +19,18 @@
 
 ---
 
-video-instruction - FastAPI project，基于 Python 3.13 + PostgreSQL + Redis。
+video-structure - 视频结构化服务：场景检测 + 九宫格抽帧 + 可选 VLM 场景描述，
+基于 Python 3.13 + FastAPI，任务队列用 Huey（SQLite），视频解码依赖 ffmpeg/ffprobe。
 
 ## 技术栈
 
-- **框架**: FastAPI
-- **ORM**: SQLModel (SQLAlchemy + Pydantic)
-- **数据库**: PostgreSQL 18 (asyncpg)
-- **缓存**: Redis 7 (redis.asyncio)
-- **认证**: JWT (python-jose) + bcrypt
-- **限流**: slowapi + 自定义 Redis 令牌桶
-- **迁移**: Alembic
-- **包管理**: uv (astral-sh)
+- **框架**: FastAPI + uvicorn
+- **配置**: pydantic-settings
+- **任务队列**: Huey（SQLite 存储，服务内嵌 worker）
+- **场景检测**: PySceneDetect（extra `scene-detect`，ffmpeg 解码 + OpenCV）
+- **结构化抽帧**: ffmpeg + Pillow / numpy（extra `structure`）
+- **场景描述**: OpenAI 兼容接口调用 VLM（可选）
+- **包管理**: uv（astral-sh）
 - **构建**: Hatchling
 
 ## 快速开始
