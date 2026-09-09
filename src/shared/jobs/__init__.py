@@ -139,7 +139,7 @@ def build_job_submit_response(job_id: str, poll_url_prefix: str) -> JobSubmitRes
 
 
 def cleanup_stale_log_fds() -> None:
-    """关闭 server.log 轮转后仍被进程持有的已删除文件描述符。"""
+    """关闭轮转后仍被进程持有的已删除日志文件描述符。"""
     import logging.handlers
 
     for handler in logging.getLogger().root.handlers:
@@ -223,7 +223,8 @@ def run_worker(service: str) -> None:
     from structure.core.settings import settings
     from structure.services.tasks import TASKS as structure_tasks
 
-    configure_logging(level="DEBUG", path=settings.log_config_path)
+    # worker 与 API 统一 settings.log_level（生产 INFO）；role=worker → 写 log/worker.log
+    configure_logging(level=settings.log_level, path=settings.log_config_path, role="worker")
     cleanup_stale_log_fds()
 
     parser = argparse.ArgumentParser(description=f"{service} Huey Worker")

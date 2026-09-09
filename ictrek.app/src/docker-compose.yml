@@ -82,8 +82,7 @@ x-detect-base: &detect-base
   volumes:
     - ${VOS_APP_STORAGE_PATH}/data:/app/data
     - ${VOS_APP_STORAGE_PATH}/staging:/data/video-structure-cache
-    # 日志按容器分目录：每个容器内有 API + worker 两个进程，
-    # 共用同一个 /app/log/server.log 会因 RotatingFileHandler 非多进程安全而轮转竞态
+    # 日志按容器分目录；一进程一文件（API→server.log，worker→worker.log）避免轮转竞态
     - ${VOS_APP_STORAGE_PATH}/logs/video-structure-detect:/app/log
   labels:
     - "traefik.enable=true"

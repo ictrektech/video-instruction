@@ -17,8 +17,9 @@ services:
       - ../src:/app/src
       - ../config:/app/config
       - ../log:/app/log
-      # README.md for hatchling build
+      # README.md / ictrek.app/VERSION for hatchling build（动态版本源）
       - ../README.md:/app/README.md
+      - ../ictrek.app/VERSION:/app/ictrek.app/VERSION:ro
       # Persist .venv across restarts (own volume per service)
       - video-structure-venv-detection:/app/.venv
       # 共享 huey.db（jobs 表 + task 队列）
@@ -70,6 +71,8 @@ services:
       - ../config:/app/config
       - ../log:/app/log
       - ../README.md:/app/README.md
+      # hatchling 动态版本源，uv sync 构建本地包时需要
+      - ../ictrek.app/VERSION:/app/ictrek.app/VERSION:ro
       # Persist .venv across restarts (own volume per service)
       - video-structure-venv-structure:/app/.venv
       # 写：集中式缓存（与输入路径解耦）

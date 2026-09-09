@@ -29,6 +29,22 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+class RoleFilter(logging.Filter):
+    """进程角色过滤器。
+
+    为日志记录补充角色标识（api / worker），formatter 引用 %(role)s 时
+    不会因缺失字段报错。角色由 configure_logging 按进程注入。
+    """
+
+    def __init__(self, role: str = "api"):
+        super().__init__()
+        self.role = role
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.role = self.role
+        return True
+
+
 class AccessLogDefaultsFilter(logging.Filter):
     """Access log 默认字段过滤器。
 

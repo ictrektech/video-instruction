@@ -2,11 +2,13 @@ version: 1
 disable_existing_loggers: False
 formatters:
   default:
-    format: '[magenta]%(request_id)s[/] [cyan]%(source_file)s:%(source_line)d[/] | %(message)s'
+    # %(role)s 为进程角色（api/worker），由 RoleFilter 注入；
+    # stdout 走 RichHandler（markup=True），role 不带方括号以免被当作样式标签
+    format: '%(role)s [magenta]%(request_id)s[/] [cyan]%(source_file)s:%(source_line)d[/] | %(message)s'
   access:
-    format: '[magenta]%(request_id)s[/] %(message)s | %(client_addr)s "%(request_line)s" %(status_code)d %(status_phrase)s %(duration_ms).2fms'
+    format: '%(role)s [magenta]%(request_id)s[/] %(message)s | %(client_addr)s "%(request_line)s" %(status_code)d %(status_phrase)s %(duration_ms).2fms'
   file:
-    format: '[%(levelname)s] %(asctime)s %(request_id)s [%(name)s] %(filename)s:%(lineno)d %(message)s'
+    format: '[%(levelname)s] [%(role)s] %(asctime)s %(request_id)s [%(name)s] %(filename)s:%(lineno)d %(message)s'
     datefmt: '%Y-%m-%d %H:%M:%S'
 
 filters:
@@ -16,12 +18,16 @@ filters:
     (): shared.core.logging.logging_filters.RequestIdFilter
   access_defaults:
     (): shared.core.logging.logging_filters.AccessLogDefaultsFilter
+  # 进程角色（api/worker）：formatter 引用 %(role)s，取值由 get_log_config 重载
+  role:
+    (): shared.core.logging.logging_filters.RoleFilter
+    role: api
 
 handlers:
   default:
     formatter: default
     class: rich.logging.RichHandler
-    filters: [exc_origin, request_id]
+    filters: [exc_origin, request_id, role]
     rich_tracebacks: False
     tracebacks_show_locals: False
     show_time: True
@@ -32,7 +38,7 @@ handlers:
   access:
     formatter: access
     class: rich.logging.RichHandler
-    filters: [request_id, access_defaults]
+    filters: [request_id, access_defaults, role]
     rich_tracebacks: False
     show_time: True
     show_level: True
@@ -46,7 +52,7 @@ handlers:
     maxBytes: 10485760
     backupCount: 5
     encoding: utf-8
-    filters: [request_id]
+    filters: [request_id, role]
     delay: true
 
 loggers:
