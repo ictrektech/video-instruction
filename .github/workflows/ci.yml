@@ -24,5 +24,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: latest
-      - run: uv sync --extra dev
+      # 单测会 import scene_detect / structure 的运行时模块（numpy、PIL、scenedetect…），
+      # 这些依赖声明在 scene-detect / structure 两个 extra 里，dev 并不包含，必须一起装
+      - run: uv sync --extra dev --extra scene-detect --extra structure
       - run: uv run pytest -m "not integration" -v
