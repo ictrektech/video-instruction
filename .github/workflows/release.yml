@@ -14,7 +14,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # 全量历史 + tags：release notes 需 git log <上一发布tag>..<当前tag>，
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-python@v5
         with:
@@ -62,7 +66,8 @@ jobs:
           {
             echo "Pull-mode VOS app package for com.ictrek.video-structure."
             echo
-            if [[ -n "$PREVIOUS" ]]; then
+            # PREVIOUS 可能是远端才有的 release tag，先校验本地可解析再用于 git log
+            if [[ -n "$PREVIOUS" ]] && git rev-parse --quiet --verify "${PREVIOUS}^{commit}" >/dev/null; then
               echo "Changes since ${PREVIOUS}:"
               git log --no-merges --pretty='- %s (%h)' "${PREVIOUS}..${CURRENT}"
             else
