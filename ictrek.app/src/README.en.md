@@ -6,7 +6,7 @@ Video scene detection (scene-detect) and video structuring (structure) dual-serv
 
 - **scene-detect (default host port 48910)**: ffprobe metadata → PySceneDetect scene boundaries, returns `scenes[]`
 - **structure (default host port 48911)**: per-scene frame grids → staging → tar artifact pull delivery; optional VLM scene descriptions (describe)
-- **Integration guide page**: navigation "Video Instruction → Integration Guide", a same-origin iframe with the full HTTP API reference
+- **Integration guide page**: navigation "Video Structure → Integration Guide", a same-origin iframe with the full HTTP API reference
 
 ## Integration Notes
 

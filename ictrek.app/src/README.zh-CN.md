@@ -6,7 +6,7 @@
 
 - **scene-detect（默认宿主端口 48910）**：ffprobe 元数据 → PySceneDetect 场景边界检测，返回 `scenes[]`
 - **structure（默认宿主端口 48911）**：按场景抽帧生成九宫格 → staging 暂存 → tar 产物 Pull 交付；可选 VLM 场景描述（describe）
-- **接入文档页面**：导航「视频理解 → 接入文档」，同域 iframe 打开完整 HTTP API 说明
+- **接入文档页面**：导航「视频结构化 → 接入文档」，同域 iframe 打开完整 HTTP API 说明
 
 ## 接入要点
 
