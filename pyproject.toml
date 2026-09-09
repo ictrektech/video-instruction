@@ -69,3 +69,10 @@ addopts = "--import-mode=importlib"
 [tool.hatch.version]
 path = "ictrek.app/VERSION"
 pattern = "^(?P<version>.+)$"
+
+# 默认索引指向清华镜像：uv sync --frozen 按 uv.lock 里记录的 URL 下载，
+# 让 lock 生成时就记录可达源（国内构建机直连 pypi 会超时）。
+# 修改索引后需重新 uv lock 使其写入 lock 文件。
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true

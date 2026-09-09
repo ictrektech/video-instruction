@@ -24,9 +24,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /bin/
 
 WORKDIR /app
 
-# Use Tsinghua mirror for uv (PyPI proxy, essential for sophon/CN networks)
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
-ENV UV_INDEX_PRIORITY=always
+# PyPI 镜像源固化在 pyproject.toml 的 [[tool.uv.index]]（清华源）：
+# uv sync --frozen 按 uv.lock 里记录的 URL 下载，仅设 UV_INDEX_URL 环境变量
 ENV PYTHONUNBUFFERED=1
 
 # Install dependencies first (layer caching)

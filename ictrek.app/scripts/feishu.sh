@@ -31,12 +31,16 @@ PY
 }
 
 feishu_get_token() {
-  curl --fail -sS -X POST \
+  curl -sS -X POST \
     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
     -H 'Content-Type: application/json' \
     -d "{\"app_id\":\"${FEISHU_APP_ID}\",\"app_secret\":\"${FEISHU_APP_SECRET}\"}" \
     | python3 -c 'import json, sys
-data = json.load(sys.stdin)
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    raise SystemExit(f"feishu token 接口响应异常（非 JSON）: {raw[:300]!r}")
 if data.get("code") != 0:
     raise SystemExit(f"get_feishu_token failed: {data}")
 print(data["tenant_access_token"])'
@@ -60,19 +64,24 @@ feishu_load_auth() {
 }
 
 feishu_api() { # <METHOD> <url> [body]
+  # 不用 --fail：理由同 feishu_get_token，错误响应体要流到下游解析并报出
   if [[ -n "${3:-}" ]]; then
-    curl --fail -sS -X "$1" "$2" -H "Authorization: Bearer ${FEISHU_TOKEN}" \
+    curl -sS -X "$1" "$2" -H "Authorization: Bearer ${FEISHU_TOKEN}" \
       -H 'Content-Type: application/json' --data "$3"
   else
-    curl --fail -sS -X "$1" "$2" -H "Authorization: Bearer ${FEISHU_TOKEN}"
+    curl -sS -X "$1" "$2" -H "Authorization: Bearer ${FEISHU_TOKEN}"
   fi
 }
 
 feishu_get_sheet_id_by_title() { # <标题>
-  feishu_api GET "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/${FEISHU_SPREADSHEET_TOKEN}/sheets/query" \
-    | python3 - "$1" <<'PY'
+  # 响应必须先捕获到变量再经 argv 传给 python：
+  # 若写成 "feishu_api ... | python3 - <<PY"，heredoc 会覆盖管道的 stdin，
+  # json.load(sys.stdin) 读到 EOF（空串）→ "Expecting value: char 0"
+  local resp
+  resp="$(feishu_api GET "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/${FEISHU_SPREADSHEET_TOKEN}/sheets/query")"
+  python3 - "$1" "$resp" <<'PY'
 import json, sys
-title, data = sys.argv[1], json.load(sys.stdin)
+title, data = sys.argv[1], json.loads(sys.argv[2])
 if data.get("code") != 0:
     raise SystemExit(f"query sheets failed: {data}")
 for sheet in data.get("data", {}).get("sheets", []):
@@ -120,11 +129,15 @@ for i, v in enumerate(row, start=1):
 raise SystemExit(f"component column not found: {target}")
 PY
 }
+# 注：与 desensitize/nowen-video 对齐，此函数只做"找列"；
+# 组件名/repository/日期行的写入由 feishu_record_build 完成
 
 feishu_find_component_repository() { # <sheet_id> <列字母> -> 第 2 行的 repository
   feishu_get_range_values "$1!${2}2:${2}2" \
     | python3 -c 'import json, sys
-data = json.loads(sys.stdin)
+data = json.load(sys.stdin)
+if data.get("code") != 0:
+    raise SystemExit(f"read component repository failed: {data}")
 values = data.get("data", {}).get("valueRange", {}).get("values", [])
 if not values or not values[0] or not str(values[0][0]).strip():
     raise SystemExit("component repository missing from row2")
@@ -134,7 +147,9 @@ print(str(values[0][0]).strip())'
 feishu_find_latest_tag() { # <sheet_id> <列字母> -> 数据区首个非空 tag
   feishu_get_range_values "$1!${2}4:${2}2000" \
     | python3 -c 'import json, sys
-data = json.loads(sys.stdin)
+data = json.load(sys.stdin)
+if data.get("code") != 0:
+    raise SystemExit(f"read latest tag failed: {data}")
 values = data.get("data", {}).get("valueRange", {}).get("values", [])
 for row in values:
     if row and row[0] is not None and str(row[0]).strip():
@@ -144,9 +159,10 @@ raise SystemExit("latest tag not found")'
 }
 
 feishu_resolve_image() { # <sheet标题> <组件名> <默认repo> -> repo:tag
-  local token sheet_id col repo tag
-  token="$(feishu_get_token)"
-  sheet_id="$(feishu_get_sheet_id_by_title "$token" "$1")"
+  local sheet_id col repo tag
+  # 注意：feishu_get_sheet_id_by_title 只收标题一个参数（token 走全局 FEISHU_TOKEN），
+  # 不要把 tenant token 当标题传入
+  sheet_id="$(feishu_get_sheet_id_by_title "$1")"
   col="$(feishu_find_component_column "$sheet_id" "$2")"
   repo="$(feishu_find_component_repository "$sheet_id" "$col" 2>/dev/null || true)"
   repo="${repo:-$3}"
@@ -158,10 +174,15 @@ feishu_resolve_image() { # <sheet标题> <组件名> <默认repo> -> repo:tag
 # ---------------- 写侧 ----------------
 
 feishu_find_date_row() { # <sheet_id> <YYYYMMDD> -> 行号（无则输出空）
-  feishu_get_range_values "$1!A4:A2000" \
-    | python3 - "$2" <<'PY'
+  # 同 feishu_get_sheet_id_by_title：响应须经 argv 传入，不能与 heredoc 抢 stdin
+  local resp
+  resp="$(feishu_get_range_values "$1!A4:A2000")"
+  python3 - "$2" "$resp" <<'PY'
 import json, sys
-target, data = sys.argv[1], json.loads(sys.stdin)
+target = sys.argv[1]
+data = json.loads(sys.argv[2] or "{}")
+if data.get("code") != 0:
+    raise SystemExit(f"read date column failed: {data}")
 values = data.get("data", {}).get("valueRange", {}).get("values", [])
 for row_num, row in enumerate(values, start=4):
     if row and str(row[0]).strip() == target:
@@ -193,9 +214,8 @@ if data.get("code") != 0:
 
 feishu_record_build() { # <sheet标题> <组件名> <repo> <tag>
   local sheet="$1" component="$2" repository="$3" tag="$4"
-  local token sheet_id date_row resp col_idx col
-  token="$(feishu_get_token)"
-  sheet_id="$(feishu_get_sheet_id_by_title "$token" "$sheet")"
+  local sheet_id date_row resp col_idx col
+  sheet_id="$(feishu_get_sheet_id_by_title "$sheet")"
   _feishu_log "sheet: ${sheet} -> ${sheet_id}"
 
   date_row="$(feishu_find_date_row "$sheet_id" "$(date +%Y%m%d)")"
