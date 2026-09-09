@@ -18,26 +18,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# 固定 uv 版本：用 latest 时上游一发版就会改变 digest，
+# 导致本层之后（含最贵的依赖安装）全部缓存失效
+COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /bin/
 
 WORKDIR /app
 
 # Use Tsinghua mirror for uv (PyPI proxy, essential for sophon/CN networks)
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 ENV UV_INDEX_PRIORITY=always
+ENV PYTHONUNBUFFERED=1
 
 # Install dependencies first (layer caching)
+# cache mount：依赖变化时复用已下载的包，避免整层重建时重新拉取
+# 第三方依赖（含两个 extras）全部在这一层装完，改代码时不会重装；
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra scene-detect --extra structure --no-install-project
 
 # Copy application code
+# 版本文件与代码一起拷贝：它只在项目安装（下一层）时读取，
+# 不参与上面的依赖层，因此发版 bump 版本不会击穿依赖缓存
 COPY src/ src/
 COPY config/ config/
 COPY README.md ./
+COPY ictrek.app/VERSION ictrek.app/VERSION
 # 单镜像：同时包含 scene-detect 与 structure 两套运行时（两者依赖相同）。
 # 部署时两个容器共用本镜像，仅通过 command（scene-detect / structure）与 APP_PORT 区分，
 # 因此本文件不设 ENTRYPOINT/CMD——启动命令由 compose 的 command 提供。
-RUN uv sync --frozen --no-dev --extra scene-detect --extra structure
+# 这一层只装本地项目（editable）并生成 console script；依赖已在上层就位，属秒级操作。
+# extras 必须重复声明：uv sync 会把环境收敛到"请求集合"，省略会卸载掉上层装的 extras。
+# --reinstall-package：避免命中 uv 缓存里的旧构建产物，保证装进去的是当前版本
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --extra scene-detect --extra structure \
+    --reinstall-package video-instruction
 
 ENV PATH="/app/.venv/bin:$PATH"
 

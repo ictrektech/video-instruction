@@ -16,6 +16,11 @@ dist/
 .git/
 .gitignore
 
+# 本地运行产物 / 测试数据
+tmp/
+data/
+ictrek.app/dist/
+
 # Logs
 log/
 *.log
