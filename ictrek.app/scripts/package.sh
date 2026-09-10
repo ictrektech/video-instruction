@@ -137,7 +137,8 @@ for expected in ("profiles:", "frontend:", "storage:"):
 
 routers = (dst / "routers.yml").read_text(encoding="utf-8")
 for expected in (
-    "com-ictrek-video-structure",
+    "router-type: structured",
+    "id: integration-doc",
     "iframe-src: /app/com.ictrek.video-structure/doc/integration.html",
     "entry-point: true",
     "embed: true",

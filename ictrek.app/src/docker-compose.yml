@@ -146,7 +146,7 @@ x-structure-base: &structure-base
     - "traefik.http.routers.video-structure-top-open.service=video-structure-web"
     - "traefik.http.routers.video-structure-top-open.middlewares=video-structure-top-open-redirect"
     - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.regex=^(https?://[^/]+)/app/com\\.ictrek\\.video-structure/?(?:\\?.*)?$"
-    - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.replacement=$${1}/#/app/com.ictrek.video-structure/com-ictrek-video-structure/integration-doc"
+    - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.replacement=$${1}/#/app/com.ictrek.video-structure/integration-doc"
     - "traefik.http.middlewares.video-structure-top-open-redirect.redirectregex.permanent=false"
   healthcheck:
     test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8911/api/health', timeout=5).read()\" > /dev/null 2>&1 || exit 1"]
