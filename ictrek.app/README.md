@@ -12,7 +12,7 @@ ictrek.app/
 │   ├── manifest.yml         # 应用元数据 / profiles / frontend / storage
 │   ├── docker-compose.yml   # 双容器编排 + Traefik labels（amd / arm 两个 profile）
 │   ├── configs.yml          # 安装期配置项（仅必要项）
-│   ├── routers.yml          # 导航注册：视频结构化 → 接入文档（iframe）
+│   ├── routers.yml          # 导航注册：视频结构化 → 服务接入文档（iframe）
 │   ├── README.zh-CN.md      # 应用商店说明（默认语言）
 │   └── README.en.md
 ├── scripts/
