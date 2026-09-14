@@ -53,7 +53,7 @@ class AccessLogDefaultsFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.client_addr = getattr(record, "client_addr", "-")
-        record.request_line = getattr(record, "request_line", "-")
+        record.method = getattr(record, "method", "-")
         record.status_code = getattr(record, "status_code", 0)
         record.status_phrase = getattr(record, "status_phrase", "-")
         record.duration_ms = getattr(record, "duration_ms", 0.0)

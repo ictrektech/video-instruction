@@ -63,6 +63,7 @@ def run_structure(
     """
     started_at = int(time.time())
     update_job(job_id, status="running", started_at=started_at, attempt=1)
+    logger.info("structure 开始: job=%s video=%s", job_id, redact_url(video_path))
 
     try:
         # 解析 scenes
@@ -149,6 +150,7 @@ def run_describe_scenes(
     """
     started_at = int(time.time())
     update_job(job_id, status="running", started_at=started_at, attempt=1)
+    logger.info("describe 开始: job=%s structure_job=%s", job_id, structure_job_id)
 
     try:
         from structure.core.settings import settings as struct_settings

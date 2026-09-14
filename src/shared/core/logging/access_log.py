@@ -25,14 +25,12 @@ def log_access(request: Request, response: Response | None, duration_ms: float) 
 
     client_addr = f"{request.client.host}:{request.client.port}" if request.client else "-"
     query = f"?{request.url.query}" if request.url.query else ""
-    http_version = request.scope.get("http_version", "1.1")
-    request_line = f"{request.method} {request.url.path}{query} HTTP/{http_version}"
 
     _access_logger.info(
-        "ACCESS",
+        f"{request.url.path}{query}",
         extra={
             "client_addr": client_addr,
-            "request_line": request_line,
+            "method": request.method,
             "status_code": status_code,
             "status_phrase": status_phrase,
             "duration_ms": duration_ms,

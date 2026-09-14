@@ -6,7 +6,7 @@ formatters:
     # stdout 走 RichHandler（markup=True），role 不带方括号以免被当作样式标签
     format: '%(role)s [magenta]%(request_id)s[/] [cyan]%(source_file)s:%(source_line)d[/] | %(message)s'
   access:
-    format: '%(role)s [magenta]%(request_id)s[/] %(message)s | %(client_addr)s "%(request_line)s" %(status_code)d %(status_phrase)s %(duration_ms).2fms'
+    format: '%(role)s [magenta]%(request_id)s[/] \[[cyan]%(method)s[/]] %(message)s | %(client_addr)s %(status_code)d %(status_phrase)s %(duration_ms).2fms'
   file:
     format: '[%(levelname)s] [%(role)s] %(asctime)s %(request_id)s [%(name)s] %(filename)s:%(lineno)d %(message)s'
     datefmt: '%Y-%m-%d %H:%M:%S'

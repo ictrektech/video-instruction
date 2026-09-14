@@ -9,6 +9,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
+from shared.utils.video_source import redact_url
 from structure.services.llm.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,12 @@ class LLMClient:
             api_key=api_key,
             timeout=timeout,
             max_retries=2,
+        )
+        logger.info(
+            "LLM client 初始化: model=%s base_url=%s key=%s",
+            model_name,
+            redact_url(base_url),
+            f"***{api_key[-4:]}" if api_key else "(未设置)",
         )
 
     async def close(self) -> None:
