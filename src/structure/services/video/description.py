@@ -5,6 +5,7 @@ import logging
 import tempfile
 import time
 from asyncio import Semaphore, gather
+from collections.abc import Callable
 from pathlib import Path
 from shutil import move
 
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 from shared.core.errors.error_codes import BusinessErrorCode
 from shared.core.errors.exceptions import ApiException
 from shared.jobs import get_job
+from shared.utils.video_source import redact_url
 from structure.core.settings import Settings
 from structure.schemas.description import (
     SceneDescriptionItem,
@@ -98,13 +100,15 @@ async def describe_scenes(
     settings: Settings,
     model_cfg: ModelConfig | None,
     force: bool = False,
+    progress_cb: Callable[[int, int], None] | None = None,
 ) -> SceneDescriptionResult:
     """对指定 structure job 的所有场景进行大模型描述
 
     流程：
     1. 通过 structure job 的 result_ref 找到 staging 目录
     2. 从 staging manifest 恢复 scenes，读取九宫格图片
-    3. 如果已有描述且与当前 scenes 对齐、非 force，直接返回
+    3. 如果已有描述且全部成功、与当前 scenes 对齐、非 force，直接返回；
+       部分失败时复用成功项，仅重试失败场景
     4. 并发对各场景图片调用 LLM
     5. 将描述写入 staging 目录的 descriptions.json
 
@@ -113,27 +117,32 @@ async def describe_scenes(
         settings: 服务配置。
         model_cfg: 大模型配置。
         force: 是否强制重新描述（忽略已有描述）。
+        progress_cb: 可选进度回调，每完成一个场景调用一次 (done, total)。
 
     Returns:
         场景描述结果
     """
     # 1. 定位 staging 目录
     staging_dir = _resolve_staging_dir(structure_job_id)
+    logger.info("describe staging_dir: %s", staging_dir)
 
     # 2. 从 manifest 恢复场景
     manifest = load_manifest(staging_dir)
     if manifest is None:
+        logger.error("staging manifest 缺失: staging_dir=%s", staging_dir)
         raise ApiException(BusinessErrorCode.VIDEO_SCENE_CACHE_MISS)
     scenes = load_scenes(staging_dir)
     video_hash = manifest.get("video_hash", "")
 
     # 3. 检查已有描述（需与当前 scenes 对齐）
+    cached_descriptions: SceneDescriptionResult | None = None
     if not force:
-        cached_descriptions = _load_cached_descriptions(staging_dir)
-        if cached_descriptions is not None and _descriptions_match_scenes(
-            cached_descriptions, scenes
-        ):
-            return cached_descriptions
+        cached = _load_cached_descriptions(staging_dir)
+        if cached is not None and _descriptions_match_scenes(cached, scenes):
+            if not any(item.status == "failed" for item in cached.descriptions):
+                return cached
+            # 缓存与 scenes 对齐但部分失败：复用成功项，仅重试失败场景
+            cached_descriptions = cached
 
     # 4. 构造图片路径 & 并发描述
     grids_dir = get_grids_dir(staging_dir)
@@ -164,7 +173,12 @@ async def describe_scenes(
                         status="failed",
                         error="图片文件不存在",
                     ),
-                    None,
+                    WarningDTO(
+                        code="DESC_GRID_FILE_MISSING",
+                        message=f"场景 {scene_index} 九宫格图片不存在: {grid_image}",
+                        scope="scene_description",
+                        target_id=str(scene_index),
+                    ),
                 )
 
             try:
@@ -179,7 +193,7 @@ async def describe_scenes(
                     None,
                 )
             except LLMRequestError as exc:
-                msg = str(exc)
+                msg = redact_url(str(exc))
                 logger.error("场景 %d 描述失败: %s", scene_index, msg)
                 return (
                     SceneDescriptionItem(
@@ -196,8 +210,33 @@ async def describe_scenes(
                     ),
                 )
 
+    cached_ok = (
+        {i.scene_index: i for i in cached_descriptions.descriptions if i.status == "ok"}
+        if cached_descriptions is not None
+        else {}
+    )
+
     start = time.monotonic()
-    tasks = [_describe_one(s.scene_index, s.grid_image) for s in scenes if s.grid_image is not None]
+    tasks = [
+        _describe_one(s.scene_index, s.grid_image)
+        for s in scenes
+        if s.grid_image is not None and s.scene_index not in cached_ok
+    ]
+    total = sum(1 for s in scenes if s.grid_image is not None)
+    done = len(cached_ok)
+
+    async def _track(coro):
+        """每完成一个场景回调一次进度 (done, total)；回调失败仅忽略，不影响任务。"""
+        nonlocal done
+        item = await coro
+        done += 1
+        if progress_cb:
+            try:
+                progress_cb(done, total)
+            except Exception:
+                logger.warning("进度回调失败（忽略）: job_id=%s", structure_job_id, exc_info=True)
+        return item
+
     # 没有 grid_image 的场景标记为 skipped
     skipped: list[SceneDescriptionItem] = [
         SceneDescriptionItem(
@@ -210,12 +249,21 @@ async def describe_scenes(
     ]
 
     try:
-        item_results: list[tuple[SceneDescriptionItem, WarningDTO | None]] = await gather(*tasks)
+        item_results: list[tuple[SceneDescriptionItem, WarningDTO | None]] = await gather(
+            *[_track(t) for t in tasks]
+        )
     finally:
         await llm_client.close()
 
-    results = [item for item, _ in item_results]
-    warnings: list[WarningDTO] = [w for _, w in item_results if w is not None]
+    results = list(cached_ok.values()) + [item for item, _ in item_results]
+    warnings = [w for _, w in item_results if w is not None]
+
+    # 全部尝试描述的场景都失败时，视为整体失败：抛出异常让上层 job 状态置为 failed，
+    # 且不落盘 descriptions.json，避免 force=False 重试时命中失败缓存直接返回。
+    if tasks and all(item.status == "failed" for item in results):
+        first_error = next((i.error for i in results if i.error), "未知错误")
+        raise LLMRequestError(f"全部 {len(results)} 个场景描述失败: {first_error}")
+
     results.extend(skipped)
     elapsed = time.monotonic() - start
 

@@ -291,6 +291,7 @@ def build_job_status_response(row: dict) -> JobStatusResponse:
         started_at=row["started_at"],
         finished_at=row["finished_at"],
         attempt=row["attempt"],
+        progress=row.get("progress"),
         result=result,
         error=error,
     )

@@ -164,6 +164,7 @@ def run_describe_scenes(
                 settings=struct_settings,
                 model_cfg=cfg,
                 force=force,
+                progress_cb=lambda done, total: update_job(job_id, progress=f"{done}/{total}"),
             )
         )
 

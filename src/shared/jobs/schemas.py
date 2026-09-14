@@ -36,5 +36,8 @@ class JobStatusResponse(BaseModel):
     started_at: int | None = None
     finished_at: int | None = None
     attempt: int = 0
+    progress: str | None = Field(
+        default=None, description="执行进度（如 12/73），running 时非空，由任务自身更新"
+    )
     result: dict | None = Field(default=None, description="任务结果 dict，成功时非空")
     error: JobErrorDTO | None = None

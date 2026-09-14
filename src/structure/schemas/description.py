@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from structure.schemas.model_config import ModelConfig
 from structure.schemas.video import WarningDTO
@@ -38,3 +38,9 @@ class SceneDescriptionResult(BaseModel):
     video_hash: str = Field(default="", description="视频内容哈希（MD5），来自 staging manifest")
     descriptions: list[SceneDescriptionItem] = Field(description="场景描述列表")
     warnings: list[WarningDTO] = Field(default_factory=list, description="警告信息")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def status(self) -> Literal["completed", "partial"]:
+        """整体状态：全部场景成功/跳过为 completed，存在失败为 partial。"""
+        return "partial" if any(i.status == "failed" for i in self.descriptions) else "completed"

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at   INTEGER,
     finished_at  INTEGER,
     attempt      INTEGER NOT NULL DEFAULT 0,
+    progress     TEXT,
     request_json TEXT NOT NULL,
     result_json  TEXT,
     result_ref   TEXT,
@@ -49,7 +50,8 @@ VALUES (?, ?, ?, 'queued', ?, 0, ?)
 
 SQL_GET_JOB = """
 SELECT job_id, job_type, video_hash, status, created_at, started_at, finished_at,
-       attempt, request_json, result_json, result_ref, error_code, error_message, error_detail
+       attempt, progress, request_json, result_json, result_ref,
+       error_code, error_message, error_detail
 FROM jobs WHERE job_id = ?
 """
 
@@ -68,6 +70,7 @@ SET status = COALESCE(?, status),
     started_at  = COALESCE(?, started_at),
     finished_at = COALESCE(?, finished_at),
     attempt     = COALESCE(?, attempt),
+    progress    = COALESCE(?, progress),
     result_json = COALESCE(?, result_json),
     result_ref  = COALESCE(?, result_ref),
     error_code  = COALESCE(?, error_code),
@@ -132,6 +135,9 @@ def init_db() -> None:
         if not _has_column(curs, "jobs", "video_hash"):
             curs.execute("ALTER TABLE jobs ADD COLUMN video_hash TEXT")
             logger.info("jobs 表已迁移：新增 video_hash 列")
+        if not _has_column(curs, "jobs", "progress"):
+            curs.execute("ALTER TABLE jobs ADD COLUMN progress TEXT")
+            logger.info("jobs 表已迁移：新增 progress 列")
         curs.execute(SQL_CREATE_PENDING_INDEX)
     logger.info("jobs 表已就绪 (db=%s)", settings.huey_db_path)
 
@@ -203,6 +209,7 @@ _JOB_COLUMNS = [
     "started_at",
     "finished_at",
     "attempt",
+    "progress",
     "request_json",
     "result_json",
     "result_ref",
@@ -229,7 +236,7 @@ def update_job(job_id: str, **kwargs) -> None:
     """更新 job 的指定字段。
 
     支持的 kwargs 键：
-        status, started_at, finished_at, attempt,
+        status, started_at, finished_at, attempt, progress,
         result_json, result_ref,
         error_code, error_message, error_detail
 
@@ -242,6 +249,7 @@ def update_job(job_id: str, **kwargs) -> None:
             "started_at",
             "finished_at",
             "attempt",
+            "progress",
             "result_json",
             "result_ref",
             "error_code",
