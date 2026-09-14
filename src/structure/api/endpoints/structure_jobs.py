@@ -14,6 +14,7 @@ from shared.jobs import (
     build_job_status_response,
     build_job_submit_response,
     enqueue_job,
+    get_describe_status,
     get_job,
     get_pending_job_by_video_hash,
 )
@@ -226,6 +227,14 @@ async def delete_structure_job(job_id: str) -> ResponseDTO[dict] | JSONResponse:
             BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.code,
             BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.message.format(
                 f"job status={row['status']} 不可释放"
+            ),
+        )
+    if get_describe_status(job_id) == "pending":
+        return _artifact_error(
+            409,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.code,
+            BusinessErrorCode.COMMON_UNSUPPORTED_OPERATION.message.format(
+                "存在进行中的 describe 任务，暂不可释放 staging"
             ),
         )
     staging = artifact_service.staging_dir_from_row(row)

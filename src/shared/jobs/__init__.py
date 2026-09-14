@@ -173,19 +173,21 @@ def cleanup_stale_log_fds() -> None:
 # ── worker 内 TTL 清理（Huey periodic_task）───────────────────────────
 
 
-def _has_pending_describe() -> bool:
-    """是否存在 queued/running describe（有则跳过 staging 清理）。"""
+def _pending_describe_staging_dirs() -> set[str]:
+    """进行中 describe 引用的 staging 目录名（structure_job_id），清理时受保护。"""
     with _db()(commit=True) as curs:
-        row = curs.execute(
-            "SELECT 1 FROM jobs "
-            "WHERE job_type = 'describe' AND status IN ('queued', 'running') "
-            "LIMIT 1"
-        ).fetchone()
-        return row is not None
+        # describe job 的 video_hash 列存的是 structure_job_id（即 staging 目录名），
+        # 见 description_jobs.submit_describe_job；勿改为真实视频内容哈希
+        rows = curs.execute(
+            "SELECT video_hash FROM jobs "
+            "WHERE job_type = 'describe' AND status IN ('queued', 'running')"
+        ).fetchall()
+    return {r[0] for r in rows if r[0]}
 
 
 def _cleanup_expired() -> None:
     """在 worker 内执行一次 jobs/staging/kv TTL 清理。"""
+    logger.info("开始 TTL 清理（jobs/staging/kv）")
 
     # 清理过期的 jobs 表
     cleanup_expired_jobs()
@@ -193,9 +195,7 @@ def _cleanup_expired() -> None:
     from structure.core.settings import settings as structure_settings
     from structure.services.video.cache import cleanup_expired_staging
 
-    # 有 pending describe 时整轮跳过 staging 清理，避免删掉其依赖的产物
-    if not _has_pending_describe():
-        cleanup_expired_staging(structure_settings)
+    cleanup_expired_staging(structure_settings, protected=_pending_describe_staging_dirs())
 
     # 只清理 jobs 表已不存在的 kv 残留（已随 jobs TTL 过期的结果/错误）
     with huey.storage.db(commit=True) as curs:
@@ -232,6 +232,9 @@ def run_worker(service: str) -> None:
     args = parser.parse_args()
 
     init_db()
+
+    # 启动时先清一轮：容器重启频繁，避免只在整点触发的周期任务被错过
+    _cleanup_expired()
 
     # 只在 structure worker 注册 TTL 清理，避免 scene-detect/structure 两个 worker 重复执行
     if service == "structure":

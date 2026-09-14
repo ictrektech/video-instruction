@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 from logging import getLogger
 
-from shared.jobs import _has_pending_describe, init_db
+from shared.jobs import _pending_describe_staging_dirs, init_db
 from shared.jobs.models import cleanup_expired_jobs
 
 logger = getLogger(__name__)
@@ -48,9 +48,10 @@ def main() -> None:
             from structure.core.settings import settings as struct_settings
             from structure.services.video.cache import cleanup_expired_staging
 
-            if not _has_pending_describe():
-                removed = cleanup_expired_staging(struct_settings)
-                logger.info(f"structure staging 清理: 删除了 {removed} 个目录")
+            removed = cleanup_expired_staging(
+                struct_settings, protected=_pending_describe_staging_dirs()
+            )
+            logger.info(f"structure staging 清理: 删除了 {removed} 个目录")
 
 
 if __name__ == "__main__":

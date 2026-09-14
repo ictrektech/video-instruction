@@ -204,11 +204,13 @@ def load_warnings(staging_dir: Path) -> list[WarningDTO]:
 def cleanup_expired_staging(
     settings: Settings,
     now: int | None = None,
+    protected: set[str] | None = None,
 ) -> int:
     """清理超过 ``staging_ttl_sec`` 未被搬走的 staging 目录。
 
     上游没搬 = 任务失败 / 被丢弃，产物不再被认领。只删无人认领的过期目录，
     不碰正在被上游 ``mv`` 的目录（rename 原子，删除器和搬移器不冲突）。
+    ``protected`` 中的目录名（进行中 describe 引用的 structure_job_id）跳过不清理。
     """
     ttl = settings.staging_ttl_sec
     if ttl <= 0:
@@ -220,6 +222,7 @@ def cleanup_expired_staging(
 
     now = now if now is not None else int(time.time())
     deadline = now - ttl
+    protected = protected or set()
     removed = 0
 
     for entry in root.iterdir():
@@ -229,6 +232,8 @@ def cleanup_expired_staging(
         try:
             uuid.UUID(entry.name)
         except ValueError:
+            continue
+        if entry.name in protected:
             continue
         try:
             if entry.stat().st_mtime < deadline:
