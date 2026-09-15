@@ -35,6 +35,8 @@ profiles:
       en: For ARM64 VOS hosts.
     conflicts: [amd]
 
+require-profiles: true
+
 storage:
   directories:
     # data：scene-detect 与 structure 共享的 jobs/队列 SQLite（huey.db），必须同卷、同宿主
