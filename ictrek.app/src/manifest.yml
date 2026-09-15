@@ -25,6 +25,8 @@ profiles:
     description:
       zh-CN: 适用于 AMD64 VOS 主机。
       en: For AMD64 VOS hosts.
+    caps:
+      arch: amd64
     conflicts: [arm]
   - name: arm
     title:
@@ -33,6 +35,8 @@ profiles:
     description:
       zh-CN: 适用于 ARM64 VOS 主机。
       en: For ARM64 VOS hosts.
+    caps:
+      arch: arm64
     conflicts: [amd]
 
 require-profiles: true
