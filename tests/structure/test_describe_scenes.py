@@ -19,6 +19,10 @@ from structure.services.video.description import describe_scenes
 def _settings(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         staging_base_path=str(tmp_path / "staging"),
+        llm_base_url="http://vrouter.test/v1",
+        llm_api_key="",
+        llm_model_name="vrouter-test-model",
+        llm_max_concurrency=5,
         llm_request_timeout=5,
     )
 
@@ -42,10 +46,11 @@ def _model_cfg() -> ModelConfig:
 class _FakeLLMClient:
     """可编程的 LLMClient �身：describe_image 按预设行为成功或抛错。"""
 
-    def __init__(self, behavior: dict[int, bool], **_kwargs) -> None:
+    def __init__(self, behavior: dict[int, bool], **kwargs) -> None:
         self.behavior = behavior
         self.closed = False
         self.calls: list[int] = []
+        self.kwargs = kwargs
 
     async def describe_image(self, image_path: Path, scene_index: int) -> str:
         self.calls.append(scene_index)
@@ -66,9 +71,12 @@ def _prepare(tmp_path: Path, monkeypatch, fake_client, scenes: list[SceneDTO]) -
         if s.grid_image is not None:
             (grids / s.grid_image).write_bytes(b"jpg")
 
-    monkeypatch.setattr(
-        "structure.services.video.description.LLMClient", lambda **kwargs: fake_client
-    )
+    def _build_client(**kwargs) -> _FakeLLMClient:
+        """记录构造参数后返回同一个假客户端，供断言实际生效的模型配置。"""
+        fake_client.kwargs = kwargs
+        return fake_client
+
+    monkeypatch.setattr("structure.services.video.description.LLMClient", _build_client)
     monkeypatch.setattr(
         "structure.services.video.description._resolve_staging_dir",
         lambda job_id: staging_dir,
@@ -195,3 +203,34 @@ async def test_mismatched_cache_is_ignored(monkeypatch, tmp_path: Path):
     # 全量重描述，而不是只补 scene 2
     assert second_client.calls == [0, 1, 2]
     assert {i.scene_index for i in result.descriptions} == {0, 1, 2}
+
+
+@pytest.mark.asyncio
+async def test_missing_model_cfg_falls_back_to_server_defaults(monkeypatch, tmp_path: Path):
+    """不传 model_cfg → 用 settings 的服务端默认配置构造 LLMClient（默认即 V-Router 免 key）。"""
+    scenes = [_scene_dto(0, "scene_000.jpg")]
+    client = _FakeLLMClient({0: True})
+    _prepare(tmp_path, monkeypatch, client, scenes)
+
+    result = await describe_scenes("job123", _settings(tmp_path), None, force=True)
+
+    assert result.status == "completed"
+    assert client.kwargs == {
+        "base_url": "http://vrouter.test/v1",
+        "api_key": "",
+        "model_name": "vrouter-test-model",
+        "timeout": 5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_explicit_model_cfg_overrides_server_defaults(monkeypatch, tmp_path: Path):
+    """显式传入 model_cfg → 完全覆盖服务端默认配置。"""
+    scenes = [_scene_dto(0, "scene_000.jpg")]
+    client = _FakeLLMClient({0: True})
+    _prepare(tmp_path, monkeypatch, client, scenes)
+
+    await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
+
+    assert client.kwargs["base_url"] == "http://llm.invalid/v1"
+    assert client.kwargs["model_name"] == "test-model"

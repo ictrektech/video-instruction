@@ -30,9 +30,12 @@ class Settings(BaseSettings):
     )
 
     # ── 大模型描述 ────────────────────────────────────────────
-    llm_base_url: str = Field("http://localhost:13454/v1", description="LLM API 地址")
-    llm_api_key: str = Field("", description="LLM API Key")
-    llm_model_name: str = Field("qwen2-vl-7b", description="LLM 模型名称")
+    # 默认走同 VOS 内的 V-Router 网关（compose 服务名 v-router）
+    llm_base_url: str = Field("http://v-router:8080/v1", description="LLM API 地址")
+    llm_api_key: str = Field("", description="LLM API Key；V-Router 免验证模式下保持空串")
+    llm_model_name: str = Field(
+        "model-hub/minicpm-v4.6:latest", description="LLM 模型名称（V-Router 网关模型名）"
+    )
     llm_max_concurrency: int = Field(5, description="并发描述的场景数")
     llm_request_timeout: int = Field(120, description="单次 LLM 请求超时秒数")
 

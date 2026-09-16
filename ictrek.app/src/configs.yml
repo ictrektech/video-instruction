@@ -41,9 +41,9 @@ configs:
       zh-CN: LLM API 地址
       en: LLM Base URL
     description:
-      zh-CN: OpenAI 兼容 VLM 服务地址（describe 功能）；请求体 model_cfg 可覆盖
-      en: OpenAI-compatible VLM endpoint (describe); overridable via request model_cfg
-    default: "http://10.144.144.232:21436/v1"
+      zh-CN: OpenAI 兼容 VLM 服务地址（describe 功能）。默认使用同 VOS 内的 V-Router 网关，无需在此填写；未安装 V-Router 时可改为外部地址。请求体 model_cfg 可覆盖
+      en: OpenAI-compatible VLM endpoint (describe). Defaults to the V-Router gateway inside the same VOS and needs no change; switch to an external endpoint when V-Router is not installed. Overridable via request model_cfg
+    default: "http://v-router:8080/v1"
 
   - name: VIDEO_STRUCTURE_LLM_API_KEY
     type: string
@@ -51,8 +51,8 @@ configs:
       zh-CN: LLM API Key
       en: LLM API Key
     description:
-      zh-CN: LLM 服务密钥（敏感字段，平台以密文展示）
-      en: LLM API key (sensitive; displayed as ciphertext by platform)
+      zh-CN: LLM 服务密钥（敏感字段，平台以密文展示）。使用默认的 V-Router 网关时必须留空——填占位值会被网关判为无效凭证并拒绝
+      en: LLM API key (sensitive; displayed as ciphertext by platform). Must stay empty with the default V-Router gateway — a placeholder value is rejected as an invalid credential
     default: ""
 
   - name: VIDEO_STRUCTURE_LLM_MODEL_NAME
@@ -61,6 +61,6 @@ configs:
       zh-CN: LLM 模型名称
       en: LLM Model Name
     description:
-      zh-CN: describe 功能使用的视觉模型名称
-      en: Vision model name used by the describe feature
-    default: "minicpm-v:latest"
+      zh-CN: describe 功能使用的视觉模型名称。默认值取自 V-Router 网关模型列表（模型名带来源前缀，可在 V-Router 管理界面的模型列表中确认）
+      en: Vision model name used by the describe feature. The default comes from the V-Router gateway model list (names carry a source prefix; check it in the V-Router model list)
+    default: "model-hub/minicpm-v4.6:latest"

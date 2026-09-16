@@ -53,9 +53,11 @@ x-structure-env: &structure-env
   STAGING_TTL_SEC: "604800"
   VIDEO_GRID_FFMPEG_THREADS: "0"
   # describe 默认模型（请求体 model_cfg 可覆盖；默认值与 configs.yml 保持一致）
-  LLM_BASE_URL: "${VIDEO_STRUCTURE_LLM_BASE_URL:-http://10.144.144.232:21436/v1}"
+  # 默认走同 VOS 内的 V-Router 网关（免验证）：两个容器都在 vos_default 网络，
+  # 可按 docker alias 解析。LLM_API_KEY 必须留空——填占位假值会被网关判为无效凭证并 401。
+  LLM_BASE_URL: "${VIDEO_STRUCTURE_LLM_BASE_URL:-http://v-router:8080/v1}"
   LLM_API_KEY: "${VIDEO_STRUCTURE_LLM_API_KEY:-}"
-  LLM_MODEL_NAME: "${VIDEO_STRUCTURE_LLM_MODEL_NAME:-minicpm-v:latest}"
+  LLM_MODEL_NAME: "${VIDEO_STRUCTURE_LLM_MODEL_NAME:-model-hub/minicpm-v4.6:latest}"
   LLM_MAX_CONCURRENCY: "20"
   LLM_REQUEST_TIMEOUT: "120"
   OMP_NUM_THREADS: "1"

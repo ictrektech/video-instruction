@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 import openai
+from openai import Omit
 from openai.types.chat import ChatCompletionMessageParam
 
 from shared.core.errors.error_codes import BusinessErrorCode
@@ -15,12 +16,20 @@ from structure.services.llm.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 logger = logging.getLogger(__name__)
 
 
+async def _no_credentials() -> str:
+    """空密钥占位：让 SDK 通过构造期凭据校验，实际请求再由 Omit 省略 Authorization 头。"""
+    return ""
+
+
 _IMAGE_EXT_TO_MIME: dict[str, str] = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".png": "image/png",
     ".webp": "image/webp",
 }
+
+# 推理型模型的 reasoning_content 计入 max_tokens，预算过小会返回空 content
+_MAX_TOKENS = 1024
 
 
 class LLMRequestError(ApiException):
@@ -41,9 +50,12 @@ class LLMClient:
         timeout: int = 120,
     ) -> None:
         self._model_name = model_name
+        # 空 api_key（V-Router 免验证模式）：SDK 构造期强制要求凭据、请求期要求该头
+        # 「存在或显式省略」，用空 provider + Omit 组合免发 Authorization 头；填假值会 401。
+        self._extra_headers: dict[str, str | Omit] = {} if api_key else {"Authorization": Omit()}
         self._client = openai.AsyncOpenAI(
             base_url=base_url,
-            api_key=api_key,
+            api_key=api_key or _no_credentials,
             timeout=timeout,
             max_retries=2,
         )
@@ -96,15 +108,17 @@ class LLMClient:
             response = await self._client.chat.completions.create(
                 model=self._model_name,
                 messages=messages,
-                max_tokens=256,
+                max_tokens=_MAX_TOKENS,
                 temperature=0.2,
+                extra_headers=self._extra_headers,
             )
         except openai.APIError as exc:
             logger.error("LLM 调用失败: %s", exc)
             raise LLMRequestError(str(exc)) from exc
 
         content = response.choices[0].message.content
-        if content is None:
+        if content is None or not content.strip():
+            # 空 content 判为失败以触发重试，避免静默写入空描述
             raise LLMRequestError("模型返回内容为空")
 
         return content.strip()

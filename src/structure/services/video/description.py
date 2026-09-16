@@ -115,7 +115,7 @@ async def describe_scenes(
     Args:
         structure_job_id: 对应 structure job ID（其成功产物在 staging 目录）。
         settings: 服务配置。
-        model_cfg: 大模型配置。
+        model_cfg: 大模型配置；为 None 时回落到 settings 中的服务端默认值。
         force: 是否强制重新描述（忽略已有描述）。
         progress_cb: 可选进度回调，每完成一个场景调用一次 (done, total)。
 
@@ -147,17 +147,23 @@ async def describe_scenes(
     # 4. 构造图片路径 & 并发描述
     grids_dir = get_grids_dir(staging_dir)
 
-    if model_cfg is None:
-        raise ApiException(BusinessErrorCode.COMMON_INVALID_ARGUMENT, "缺少大模型配置")
-
-    llm_client = LLMClient(
-        base_url=model_cfg.base_url,
-        api_key=model_cfg.api_key,
-        model_name=model_cfg.model_name,
-        timeout=model_cfg.request_timeout or settings.llm_request_timeout,
+    # 缺省用服务端配置组装（默认指向 V-Router 网关，免验证无需 Key）
+    effective_cfg = model_cfg or ModelConfig(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        model_name=settings.llm_model_name,
+        max_concurrency=settings.llm_max_concurrency,
+        request_timeout=settings.llm_request_timeout,
     )
 
-    sem = Semaphore(model_cfg.max_concurrency)
+    llm_client = LLMClient(
+        base_url=effective_cfg.base_url,
+        api_key=effective_cfg.api_key,
+        model_name=effective_cfg.model_name,
+        timeout=effective_cfg.request_timeout or settings.llm_request_timeout,
+    )
+
+    sem = Semaphore(effective_cfg.max_concurrency)
 
     async def _describe_one(
         scene_index: int, grid_image: str

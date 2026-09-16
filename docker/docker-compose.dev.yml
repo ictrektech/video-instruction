@@ -43,6 +43,7 @@ services:
       OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
       - video-structure-dev-net
+      - vos_default        # detect 的 worker 也可能消费 describe 任务
     restart: unless-stopped
     command:
       - bash
@@ -86,9 +87,10 @@ services:
       STAGING_BASE_PATH: /data/video-structure-cache
       STAGING_TTL_SEC: "604800"
       VIDEO_GRID_FFMPEG_THREADS: "0"
-      LLM_BASE_URL: http://10.144.144.232:21436/v1
-      LLM_API_KEY: sk-fake
-      LLM_MODEL_NAME: minicpm-v:latest
+      # 默认走 VOS 的 V-Router 网关（免验证），LLM_API_KEY 留空（原因见 client.py）
+      LLM_BASE_URL: http://v-router:8080/v1
+      LLM_API_KEY: ""
+      LLM_MODEL_NAME: model-hub/minicpm-v4.6:latest
       LLM_MAX_CONCURRENCY: 20
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
@@ -98,6 +100,7 @@ services:
       OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
       - video-structure-dev-net
+      - vos_default        # v-router 在该网络以 docker alias 暴露
     restart: unless-stopped
     command:
       - bash
@@ -117,3 +120,7 @@ volumes:
 networks:
   video-structure-dev-net:
     driver: bridge
+  # VOS 平台网络（由 VOS 创建）。make dev 需在已安装 VOS 的宿主机上执行；
+  # 无 VOS 的环境请去掉 structure 的 vos_default 并改回外部 LLM 地址。
+  vos_default:
+    external: true
