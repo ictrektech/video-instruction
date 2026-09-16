@@ -234,3 +234,23 @@ async def test_explicit_model_cfg_overrides_server_defaults(monkeypatch, tmp_pat
 
     assert client.kwargs["base_url"] == "http://llm.invalid/v1"
     assert client.kwargs["model_name"] == "test-model"
+
+
+@pytest.mark.asyncio
+async def test_partial_model_cfg_merges_with_server_defaults(monkeypatch, tmp_path: Path):
+    """只传部分字段（如仅 max_concurrency）→ 其余字段回落服务端默认。"""
+    scenes = [_scene_dto(0, "scene_000.jpg")]
+    client = _FakeLLMClient({0: True})
+    _prepare(tmp_path, monkeypatch, client, scenes)
+
+    result = await describe_scenes(
+        "job123", _settings(tmp_path), ModelConfig(max_concurrency=10), force=True
+    )
+
+    assert result.status == "completed"
+    assert client.kwargs == {
+        "base_url": "http://vrouter.test/v1",
+        "api_key": "",
+        "model_name": "vrouter-test-model",
+        "timeout": 5,
+    }

@@ -147,20 +147,29 @@ async def describe_scenes(
     # 4. 构造图片路径 & 并发描述
     grids_dir = get_grids_dir(staging_dir)
 
-    # 缺省用服务端配置组装（默认指向 V-Router 网关，免验证无需 Key）
-    effective_cfg = model_cfg or ModelConfig(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model_name=settings.llm_model_name,
-        max_concurrency=settings.llm_max_concurrency,
-        request_timeout=settings.llm_request_timeout,
+    # 缺省字段回落服务端配置（默认指向 V-Router 网关，免验证无需 Key）：
+    # model_cfg 整体不传或只传部分字段均可
+    effective_cfg = model_cfg or ModelConfig()
+    effective_cfg.base_url = effective_cfg.base_url or settings.llm_base_url
+    effective_cfg.api_key = (
+        effective_cfg.api_key if effective_cfg.api_key is not None else settings.llm_api_key
+    )
+    effective_cfg.model_name = effective_cfg.model_name or settings.llm_model_name
+    effective_cfg.max_concurrency = effective_cfg.max_concurrency or settings.llm_max_concurrency
+    effective_cfg.request_timeout = effective_cfg.request_timeout or settings.llm_request_timeout
+    logger.info(
+        "describe 模型配置: source=%s base_url=%s model=%s concurrency=%d",
+        "request" if model_cfg else "server-default(v-router)",
+        effective_cfg.base_url,
+        effective_cfg.model_name,
+        effective_cfg.max_concurrency,
     )
 
     llm_client = LLMClient(
         base_url=effective_cfg.base_url,
         api_key=effective_cfg.api_key,
         model_name=effective_cfg.model_name,
-        timeout=effective_cfg.request_timeout or settings.llm_request_timeout,
+        timeout=effective_cfg.request_timeout,
     )
 
     sem = Semaphore(effective_cfg.max_concurrency)
