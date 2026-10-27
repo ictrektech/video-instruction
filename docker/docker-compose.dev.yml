@@ -87,10 +87,10 @@ services:
       STAGING_BASE_PATH: /data/video-structure-cache
       STAGING_TTL_SEC: "604800"
       VIDEO_GRID_FFMPEG_THREADS: "0"
-      # 默认走 VOS 的 V-Router 网关（免验证），LLM_API_KEY 留空（原因见 client.py）
-      LLM_BASE_URL: http://v-router:8080/v1
+      # 默认走 VOS 的 V-Scheduler 统一模型网关（免验证），LLM_API_KEY 留空（原因见 client.py）
+      LLM_BASE_URL: http://v-scheduler:8080/v1
       LLM_API_KEY: ""
-      LLM_MODEL_NAME: model-hub/minicpm-v4.6:latest
+      LLM_MODEL_NAME: v-scheduler/ollama-qa/minicpm-v4.6:latest
       LLM_MAX_CONCURRENCY: 20
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
@@ -100,7 +100,7 @@ services:
       OPENCV_OPENMP_NUM_THREADS: "1"
     networks:
       - video-structure-dev-net
-      - vos_default        # v-router 在该网络以 docker alias 暴露
+      - vos_default        # v-scheduler 在该网络以 docker alias 暴露
     restart: unless-stopped
     command:
       - bash

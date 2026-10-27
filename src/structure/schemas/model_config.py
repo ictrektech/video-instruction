@@ -7,7 +7,7 @@ class ModelConfig(BaseModel):
     """大模型配置。
 
     全部字段可缺省：请求体允许只传部分字段（如仅 max_concurrency），
-    缺省字段回落到服务端 settings 默认值（默认指向 V-Router 网关）。
+    缺省字段回落到服务端 settings 默认值（默认指向 V-Scheduler 网关）。
     """
 
     base_url: str | None = Field(default=None, description="API 地址，如 https://api.openai.com/v1")

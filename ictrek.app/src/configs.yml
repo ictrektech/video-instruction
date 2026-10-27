@@ -61,6 +61,6 @@ configs:
       zh-CN: LLM 模型名称
       en: LLM Model Name
     description:
-      zh-CN: describe 功能使用的视觉模型名称。默认值取自 V-Scheduler 网关模型列表（模型名带来源前缀，可在 V-Scheduler 的模型列表中确认）
-      en: Vision model name used by the describe feature. The default comes from the V-Scheduler gateway model list (names carry a source prefix; check it in the V-Scheduler model list)
-    default: "model-hub/minicpm-v4.6:latest"
+      zh-CN: describe 功能使用的视觉模型名称。默认值取自 V-Scheduler 网关模型列表，格式为「v-scheduler/来源/模型:标签」（如 v-scheduler/ollama-qa/minicpm-v4.6:latest），可在 V-Scheduler 的模型列表中确认
+      en: Vision model name used by the describe feature. The default comes from the V-Scheduler gateway model list in the form "v-scheduler/source/model:tag" (e.g. v-scheduler/ollama-qa/minicpm-v4.6:latest); check it in the V-Scheduler model list
+    default: "v-scheduler/ollama-qa/minicpm-v4.6:latest"
