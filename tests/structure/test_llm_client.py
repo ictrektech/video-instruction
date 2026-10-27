@@ -35,13 +35,21 @@ _COMPLETION: dict[str, Any] = {
 
 
 async def _call(
-    monkeypatch, tmp_path: Path, api_key: str, completion: dict[str, Any]
+    monkeypatch,
+    tmp_path: Path,
+    api_key: str,
+    completion: dict[str, Any] | None = None,
+    *,
+    status_code: int = 200,
+    body: dict[str, Any] | None = None,
 ) -> tuple[httpx.Request, Any]:
     """用 MockTransport 替换底层 HTTP，返回 (实际发出的请求, 返回值或异常)。"""
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
+        if status_code != 200:
+            return httpx.Response(status_code, json=body, headers={"x-request-id": "sdk-req-id"})
         return httpx.Response(200, json=completion)
 
     real_client = openai.AsyncOpenAI
@@ -54,7 +62,9 @@ async def _call(
 
     image = tmp_path / "grid.jpg"
     image.write_bytes(b"\xff\xd8\xff")
-    client = LLMClient(base_url="http://v-router:8080/v1", api_key=api_key, model_name="test-model")
+    client = LLMClient(
+        base_url="http://v-scheduler:8080/v1", api_key=api_key, model_name="test-model"
+    )
     try:
         outcome: Any = await client.describe_image(image, 0)
     except Exception as exc:  # noqa: BLE001 - 测试需要把异常当结果返回
@@ -99,3 +109,55 @@ async def test_empty_content_is_treated_as_failure(monkeypatch, tmp_path: Path):
 
     assert isinstance(outcome, LLMRequestError)
     assert "为空" in str(outcome)
+    # 空 content 也要带上模型名，调用方才定位得到是哪个模型
+    assert outcome.model == "test-model"
+    assert outcome.status_code is None
+    assert outcome.to_detail()["model"] == "test-model"
+
+
+# V-Scheduler 缺模型时的真实响应体：不再回显被请求的 model id
+_VSCHEDULER_NOT_FOUND: dict[str, Any] = {
+    "category": "v-scheduler",
+    "code": "NOT_FOUND",
+    "error": {"code": "NOT_FOUND", "message": "unknown model or upstream"},
+    "msg": "unknown model or upstream",
+    "request_id": "75cc452e-e385-49b4-bd2a-5c349c5c5820",
+}
+
+
+@pytest.mark.asyncio
+async def test_status_error_exposes_structured_upstream_fields(monkeypatch, tmp_path: Path):
+    """网关 404：模型名、上游 code/msg/request_id 必须结构化暴露，message 不含整段 JSON。"""
+    _, outcome = await _call(monkeypatch, tmp_path, "", status_code=404, body=_VSCHEDULER_NOT_FOUND)
+
+    assert isinstance(outcome, LLMRequestError)
+    assert outcome.model == "test-model"
+    assert outcome.status_code == 404
+    assert outcome.upstream_code == "NOT_FOUND"
+    assert outcome.upstream_message == "unknown model or upstream"
+    assert outcome.request_id == "75cc452e-e385-49b4-bd2a-5c349c5c5820"
+    assert outcome.base_url == "http://v-scheduler:8080/v1"
+
+    detail = outcome.to_detail()
+    assert detail["model"] == "test-model"
+    assert detail["status_code"] == 404
+    assert detail["upstream_code"] == "NOT_FOUND"
+    assert "base_url" in detail
+
+    # message 是人读的一句话：带模型名，但不带响应 JSON 的字段名
+    assert "test-model" in outcome.message
+    for leaked in ("category", "request_id", "{"):
+        assert leaked not in outcome.message
+    assert len(outcome.message) < 200
+
+
+@pytest.mark.asyncio
+async def test_status_error_falls_back_to_sdk_request_id(monkeypatch, tmp_path: Path):
+    """错误体里没有 request_id 时，退回 SDK 的 x-request-id 头。"""
+    _, outcome = await _call(
+        monkeypatch, tmp_path, "", status_code=404, body={"msg": "unknown model or upstream"}
+    )
+
+    assert isinstance(outcome, LLMRequestError)
+    assert outcome.upstream_code == ""
+    assert outcome.request_id == "sdk-req-id"

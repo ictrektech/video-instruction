@@ -147,7 +147,7 @@ async def describe_scenes(
     # 4. 构造图片路径 & 并发描述
     grids_dir = get_grids_dir(staging_dir)
 
-    # 缺省字段回落服务端配置（默认指向 V-Router 网关，免验证无需 Key）：
+    # 缺省字段回落服务端配置（默认指向 V-Scheduler 网关，免验证无需 Key）：
     # model_cfg 整体不传或只传部分字段均可
     effective_cfg = model_cfg or ModelConfig()
     effective_cfg.base_url = effective_cfg.base_url or settings.llm_base_url
@@ -159,8 +159,8 @@ async def describe_scenes(
     effective_cfg.request_timeout = effective_cfg.request_timeout or settings.llm_request_timeout
     logger.info(
         "describe 模型配置: source=%s base_url=%s model=%s concurrency=%d",
-        "request" if model_cfg else "server-default(v-router)",
-        effective_cfg.base_url,
+        "request" if model_cfg else "server-default",
+        redact_url(effective_cfg.base_url),
         effective_cfg.model_name,
         effective_cfg.max_concurrency,
     )
@@ -173,6 +173,7 @@ async def describe_scenes(
     )
 
     sem = Semaphore(effective_cfg.max_concurrency)
+    errors: list[LLMRequestError] = []
 
     async def _describe_one(
         scene_index: int, grid_image: str
@@ -208,7 +209,8 @@ async def describe_scenes(
                     None,
                 )
             except LLMRequestError as exc:
-                msg = redact_url(str(exc))
+                errors.append(exc)  # 与 results 一起收集，供整体失败时组装根因
+                msg = redact_url(exc.message)
                 logger.error("场景 %d 描述失败: %s", scene_index, msg)
                 return (
                     SceneDescriptionItem(
@@ -222,6 +224,7 @@ async def describe_scenes(
                         message=f"场景 {scene_index} 描述失败: {msg}",
                         scope="scene_description",
                         target_id=str(scene_index),
+                        detail=exc.to_detail(),
                     ),
                 )
 
@@ -276,8 +279,29 @@ async def describe_scenes(
     # 全部尝试描述的场景都失败时，视为整体失败：抛出异常让上层 job 状态置为 failed，
     # 且不落盘 descriptions.json，避免 force=False 重试时命中失败缓存直接返回。
     if tasks and all(item.status == "failed" for item in results):
+        first = errors[0] if errors else None
+        # 场景失败里可能夹着图片缺失（没有异常对象），优先取 LLM 异常，其次退回场景 error 文本
         first_error = next((i.error for i in results if i.error), "未知错误")
-        raise LLMRequestError(f"全部 {len(results)} 个场景描述失败: {first_error}")
+        model = (first.model if first else "") or effective_cfg.model_name
+        model_part = f"（模型 {model}）" if model else ""
+        # 用不带错误码前缀的 reason 拼接：exc.message 已带前缀，直接拼会出现两层
+        if first is None:
+            reason = first_error
+        else:
+            reason = first.upstream_message or first.reason or "调用失败（详见 detail）"
+        raise LLMRequestError(
+            f"全部 {len(results)} 个场景描述失败{model_part}：{reason}",
+            model=model,
+            base_url=first.base_url if first else effective_cfg.base_url,
+            status_code=first.status_code if first else None,
+            upstream_code=first.upstream_code if first else "",
+            upstream_message=first.upstream_message if first else "",
+            request_id=first.request_id if first else "",
+            # 走到这里必然是本轮全部场景失败：results 里没有缓存成功项（否则 all(...) 为假），
+            # skipped 场景在下面才加入，所以 len(results) 就是失败数 = 可描述场景数。
+            failed_scenes=len(results),
+            total_scenes=len(results),
+        )
 
     results.extend(skipped)
     elapsed = time.monotonic() - start

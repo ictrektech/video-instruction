@@ -15,6 +15,8 @@ from shared.utils.video_hash import compute_video_hash
 HTTP_URL_PREFIXES = ("http://", "https://")
 
 _TOKEN_QUERY_RE = re.compile(r"(token=)[^&\s]*")
+# URL 里的 userinfo（user:pass@host）：token query 之外另一个会泄漏凭证的位置
+_URL_USERINFO_RE = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@")
 
 
 def is_http_url(video_path: str) -> bool:
@@ -37,8 +39,11 @@ def resolve_video_path(video_path: str, base_path: str) -> str:
 
 
 def redact_url(url: str) -> str:
-    """脱敏 URL/文本中的 token query 参数，避免 token 进入日志。"""
-    return _TOKEN_QUERY_RE.sub(r"\1***", url)
+    """脱敏 URL/文本中的凭证：userinfo（user:pass@）与 token query 参数。
+
+    两个位置都会把密码带进日志/错误明细/调用方数据库，所以一起处理。
+    """
+    return _TOKEN_QUERY_RE.sub(r"\1***", _URL_USERINFO_RE.sub(r"\g<scheme>***@", url))
 
 
 def ffmpeg_network_options() -> list[str]:

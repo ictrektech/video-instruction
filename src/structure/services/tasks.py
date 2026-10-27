@@ -155,6 +155,7 @@ def run_describe_scenes(
     try:
         from structure.core.settings import settings as struct_settings
         from structure.schemas.model_config import ModelConfig
+        from structure.services.llm.client import LLMRequestError
         from structure.services.video import description as description_service
 
         cfg = ModelConfig(**model_cfg) if model_cfg else None
@@ -185,14 +186,28 @@ def run_describe_scenes(
         )
         return result.model_dump()
 
-    except Exception as exc:
-        finished_at = int(time.time())
+    except LLMRequestError as exc:
+        # 模型缺失用专用码：调用方据此触发"跳模型仓库下载"。
+        # 只看结构（本客户端只请求一个模型，/chat/completions 回 404 NOT_FOUND 即模型缺失），
+        # 不匹配上游文案——否则网关改一句话术这条链路就静默失效。
+        model_missing = exc.status_code == 404 and exc.upstream_code == "NOT_FOUND"
         update_job(
             job_id,
             status="failed",
-            finished_at=finished_at,
+            finished_at=int(time.time()),
+            error_code="DESCRIBE_MODEL_NOT_FOUND" if model_missing else "DESCRIBE_ERROR",
+            error_message=exc.message,
+            error_detail=exc.to_detail(),
+        )
+        logger.exception("describe 失败: job=%s", job_id)
+        raise
+    except Exception as exc:
+        update_job(
+            job_id,
+            status="failed",
+            finished_at=int(time.time()),
             error_code="DESCRIBE_ERROR",
-            error_message=str(exc),
+            error_message=redact_url(str(exc)),
         )
         logger.exception("describe 失败: job=%s", job_id)
         raise

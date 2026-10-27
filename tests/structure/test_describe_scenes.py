@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
+import openai
 import pytest
 
 from structure.schemas.description import SceneDescriptionResult
@@ -43,11 +45,32 @@ def _model_cfg() -> ModelConfig:
     return ModelConfig(base_url="http://llm.invalid/v1", model_name="test-model")
 
 
+_COMPLETION = {
+    "id": "chatcmpl-test",
+    "object": "chat.completion",
+    "created": 0,
+    "model": "test-model",
+    "choices": [
+        {
+            "index": 0,
+            "message": {"role": "assistant", "content": "一张灰色图片。"},
+            "finish_reason": "stop",
+        }
+    ],
+}
+
+
 class _FakeLLMClient:
     """可编程的 LLMClient �身：describe_image 按预设行为成功或抛错。"""
 
-    def __init__(self, behavior: dict[int, bool], **kwargs) -> None:
+    def __init__(
+        self,
+        behavior: dict[int, bool],
+        error: LLMRequestError | None = None,
+        **kwargs,
+    ) -> None:
         self.behavior = behavior
+        self.error = error
         self.closed = False
         self.calls: list[int] = []
         self.kwargs = kwargs
@@ -55,11 +78,29 @@ class _FakeLLMClient:
     async def describe_image(self, image_path: Path, scene_index: int) -> str:
         self.calls.append(scene_index)
         if not self.behavior.get(scene_index, False):
-            raise LLMRequestError("Connection error.")
+            raise self.error or LLMRequestError("Connection error.")
         return f"描述 {scene_index}"
 
     async def close(self) -> None:
         self.closed = True
+
+
+_CONNECTION_ERROR = LLMRequestError(
+    "模型 v-scheduler/minicpm-v4.6 调用失败：Connection error.",
+    model="v-scheduler/minicpm-v4.6",
+    base_url="http://v-scheduler:8080/v1",
+    reason="Connection error.",
+)
+
+_NOT_FOUND_ERROR = LLMRequestError(
+    "模型 v-scheduler/minicpm-v4.6 调用失败（HTTP 404 NOT_FOUND）：unknown model or upstream",
+    model="v-scheduler/minicpm-v4.6",
+    base_url="http://v-scheduler:8080/v1",
+    status_code=404,
+    upstream_code="NOT_FOUND",
+    upstream_message="unknown model or upstream",
+    request_id="75cc452e-e385-49b4-bd2a-5c349c5c5820",
+)
 
 
 def _prepare(tmp_path: Path, monkeypatch, fake_client, scenes: list[SceneDTO]) -> Path:
@@ -105,6 +146,116 @@ async def test_all_failed_raises_and_skips_cache(monkeypatch, tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_no_model_list_probe_before_describing(monkeypatch, tmp_path: Path):
+    """不得在开跑前查 /models：网关的模型列表可能不完整，据此拦截会误杀可用配置。"""
+    scenes = [_scene_dto(0, "scene_000.jpg")]
+    staging_dir = get_staging_path("job123", _settings(tmp_path))
+    (staging_dir / "grids").mkdir(parents=True, exist_ok=True)
+    (staging_dir / "grids" / "scene_000.jpg").write_bytes(b"jpg")
+    monkeypatch.setattr(
+        "structure.services.video.description._resolve_staging_dir", lambda job_id: staging_dir
+    )
+    monkeypatch.setattr(
+        "structure.services.video.description.load_manifest",
+        lambda staging_dir: {"video_hash": "hash123"},
+    )
+    monkeypatch.setattr(
+        "structure.services.video.description.load_scenes", lambda staging_dir: scenes
+    )
+
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json=_COMPLETION)
+
+    real_client = openai.AsyncOpenAI
+
+    def factory(**kwargs) -> openai.AsyncOpenAI:
+        kwargs["http_client"] = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        return real_client(**kwargs)
+
+    monkeypatch.setattr("structure.services.llm.client.openai.AsyncOpenAI", factory)
+
+    await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
+
+    assert [p for p in paths if p.endswith("/models")] == []
+    assert [p for p in paths if p.endswith("/chat/completions")] == ["/v1/chat/completions"]
+
+
+@pytest.mark.asyncio
+async def test_all_failed_carries_structured_root_cause(monkeypatch, tmp_path: Path):
+    """全失败时异常带根因（模型/上游），message 只有一层前缀且不含整段 JSON。"""
+    scenes = [_scene_dto(0, "scene_000.jpg"), _scene_dto(1, "scene_001.jpg")]
+    _prepare(
+        tmp_path,
+        monkeypatch,
+        _FakeLLMClient({0: False, 1: False}, error=_NOT_FOUND_ERROR),
+        scenes,
+    )
+
+    with pytest.raises(LLMRequestError) as excinfo:
+        await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
+
+    exc = excinfo.value
+    assert exc.model == "v-scheduler/minicpm-v4.6"
+    assert exc.upstream_code == "NOT_FOUND"
+    assert exc.request_id == "75cc452e-e385-49b4-bd2a-5c349c5c5820"
+    assert (exc.failed_scenes, exc.total_scenes) == (2, 2)
+    # 只保留 error_code 前缀那一层，不再出现"大模型调用失败: 大模型调用失败:"
+    assert str(exc).count("大模型调用失败") == 1
+    assert "v-scheduler/minicpm-v4.6" in str(exc)
+    assert "{" not in str(exc)
+
+    detail = exc.to_detail()
+    assert detail["model"] == "v-scheduler/minicpm-v4.6"
+    assert detail["upstream_message"] == "unknown model or upstream"
+    assert detail["failed_scenes"] == 2
+    assert detail["total_scenes"] == 2
+
+
+@pytest.mark.asyncio
+async def test_all_failed_without_llm_error_still_names_model(monkeypatch, tmp_path: Path):
+    """全失败但根因不是 LLM（如图片缺失）→ 仍要带上配置的模型名，不能给空串。"""
+    scenes = [_scene_dto(0, "scene_000.jpg"), _scene_dto(1, "scene_001.jpg")]
+    staging_dir = _prepare(tmp_path, monkeypatch, _FakeLLMClient({0: True, 1: True}), scenes)
+    for s in scenes:
+        (staging_dir / "grids" / s.grid_image).unlink()
+
+    with pytest.raises(LLMRequestError) as excinfo:
+        await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
+
+    exc = excinfo.value
+    assert exc.to_detail()["model"] == "test-model"
+    assert exc.upstream_code == ""
+    assert exc.status_code is None
+    # 消息里仍要说明真实原因，且只有一层前缀
+    assert "图片文件不存在" in str(exc)
+    assert str(exc).count("大模型调用失败") == 1
+
+
+@pytest.mark.asyncio
+async def test_connection_error_message_has_single_prefix(monkeypatch, tmp_path: Path):
+    """连接类失败（无 upstream_message）→ 聚合消息不得叠加两层「大模型调用失败」。"""
+    scenes = [_scene_dto(0, "scene_000.jpg"), _scene_dto(1, "scene_001.jpg")]
+    _prepare(
+        tmp_path,
+        monkeypatch,
+        _FakeLLMClient({0: False, 1: False}, error=_CONNECTION_ERROR),
+        scenes,
+    )
+
+    with pytest.raises(LLMRequestError) as excinfo:
+        await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
+
+    exc = excinfo.value
+    assert str(exc).count("大模型调用失败") == 1
+    assert "Connection error." in str(exc)
+    assert exc.model == "v-scheduler/minicpm-v4.6"
+    assert exc.to_detail()["model"] == "v-scheduler/minicpm-v4.6"
+
+
+@pytest.mark.asyncio
 async def test_all_failed_missing_grids_reports_real_cause(monkeypatch, tmp_path: Path):
     """全部九宫格文件缺失 → 抛异常且消息带真实原因，而不是"未知错误"。"""
     scenes = [_scene_dto(0, "scene_000.jpg"), _scene_dto(1, "scene_001.jpg")]
@@ -121,7 +272,12 @@ async def test_all_failed_missing_grids_reports_real_cause(monkeypatch, tmp_path
 async def test_partial_failure_returns_result_with_warnings(monkeypatch, tmp_path: Path):
     """部分场景失败 → 正常返回结果，失败场景带 DESC_LLM_ERROR warning。"""
     scenes = [_scene_dto(0, "scene_000.jpg"), _scene_dto(1, "scene_001.jpg")]
-    staging_dir = _prepare(tmp_path, monkeypatch, _FakeLLMClient({0: True, 1: False}), scenes)
+    staging_dir = _prepare(
+        tmp_path,
+        monkeypatch,
+        _FakeLLMClient({0: True, 1: False}, error=_NOT_FOUND_ERROR),
+        scenes,
+    )
 
     result = await describe_scenes("job123", _settings(tmp_path), _model_cfg(), force=True)
 
@@ -130,6 +286,11 @@ async def test_partial_failure_returns_result_with_warnings(monkeypatch, tmp_pat
     assert statuses == {0: "ok", 1: "failed"}
     assert [w.code for w in result.warnings] == ["DESC_LLM_ERROR"]
     assert result.status == "partial"
+    # 逐场景排查：warning 里也要带同样的根因
+    detail = result.warnings[0].detail
+    assert detail["model"] == "v-scheduler/minicpm-v4.6"
+    assert detail["upstream_code"] == "NOT_FOUND"
+    assert detail["request_id"] == "75cc452e-e385-49b4-bd2a-5c349c5c5820"
 
     # 成功（含部分失败）时照常落盘
     saved = json.loads(get_descriptions_path(staging_dir).read_text(encoding="utf-8"))
@@ -207,7 +368,7 @@ async def test_mismatched_cache_is_ignored(monkeypatch, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_missing_model_cfg_falls_back_to_server_defaults(monkeypatch, tmp_path: Path):
-    """不传 model_cfg → 用 settings 的服务端默认配置构造 LLMClient（默认即 V-Router 免 key）。"""
+    """不传 model_cfg → 用 settings 的服务端默认配置构造 LLMClient（默认即 V-Scheduler 免 key）。"""
     scenes = [_scene_dto(0, "scene_000.jpg")]
     client = _FakeLLMClient({0: True})
     _prepare(tmp_path, monkeypatch, client, scenes)

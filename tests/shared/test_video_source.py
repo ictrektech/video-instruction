@@ -48,6 +48,25 @@ def test_redact_url_only_masks_token_query_key():
     assert "token=***" in redacted
 
 
+def test_redact_url_masks_userinfo_credentials():
+    """user:pass@host 里的密码必须抹掉，否则会进日志、错误明细和调用方数据库。"""
+    redacted = redact_url("https://alice:s3cret@llm.example.com/v1")
+
+    assert "s3cr3t" not in redacted
+    assert "alice" not in redacted
+    assert redacted == "https://***@llm.example.com/v1"
+
+
+def test_redact_url_keeps_host_and_port_without_credentials():
+    assert redact_url("http://gw:8080/v1") == "http://gw:8080/v1"
+
+
+def test_redact_url_ignores_at_sign_outside_userinfo():
+    """邮箱式的 @ 在路径/query 里很常见，不能被当成 userinfo 一起抹掉。"""
+    assert redact_url("http://host/v.mp4?to=a@b") == "http://host/v.mp4?to=a@b"
+    assert redact_url("http://host/mail/a@b/v.mp4") == "http://host/mail/a@b/v.mp4"
+
+
 def test_redact_url_keeps_local_path_unchanged():
     assert redact_url("/data/v.mp4") == "/data/v.mp4"
 

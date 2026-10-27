@@ -67,6 +67,7 @@ class WarningDTO(BaseModel):
     message: str = Field(description="警告描述")
     scope: str = Field(default="", description="警告作用域")
     target_id: str = Field(default="", description="目标标识")
+    detail: dict = Field(default_factory=dict, description="结构化明细（如失败模型/上游错误）")
 
 
 class StructureResultDTO(BaseModel):
