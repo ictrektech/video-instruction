@@ -18,7 +18,8 @@ class JobErrorDTO(BaseModel):
 
     code: str | None = None
     message: str | None = None
-    detail: str | None = None
+    # 结构化错误明细；历史数据是纯文本，读取侧需容忍 str 与 dict 两种
+    detail: dict | str | None = None
 
 
 class JobStatusResponse(BaseModel):

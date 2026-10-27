@@ -541,7 +541,7 @@ Content-Type: application/json
       <tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
       <tr><td><code>base_url</code></td><td>string</td><td>—</td><td>OpenAI 兼容地址，如 <code>http://host:21436/v1</code></td></tr>
       <tr><td><code>api_key</code></td><td>string</td><td><code>""</code></td><td>API Key</td></tr>
-      <tr><td><code>model_name</code></td><td>string</td><td>—</td><td>模型名，如 <code>minicpm-v:latest</code></td></tr>
+      <tr><td><code>model_name</code></td><td>string</td><td>—</td><td>模型名，如 <code>v-scheduler/ollama-qa/minicpm-v4.6:latest</code>（须与网关模型列表一致）</td></tr>
       <tr><td><code>max_concurrency</code></td><td>int</td><td><code>5</code></td><td>并发描述的场景数</td></tr>
       <tr><td><code>request_timeout</code></td><td>int</td><td><code>120</code></td><td>单次请求超时秒数</td></tr>
     </table>
@@ -553,7 +553,7 @@ Content-Type: application/json
   "model_cfg": {
     "base_url": "http://10.144.144.232:21436/v1",
     "api_key": "sk-xxx",
-    "model_name": "minicpm-v:latest",
+    "model_name": "v-scheduler/ollama-qa/minicpm-v4.6:latest",
     "max_concurrency": 20,
     "request_timeout": 120
   }
@@ -599,17 +599,28 @@ Content-Type: application/json
           "grid_image": "scene_002.jpg",
           "description": "",
           "status": "failed",
-          "error": "大模型调用失败: timeout"
+          "error": "大模型调用失败: 模型 v-scheduler/ollama-qa/minicpm-v4.6:latest 调用失败：timeout"
         }
       ],
-      "warnings": []
+      "warnings": [
+        {
+          "code": "DESC_LLM_ERROR",
+          "message": "场景 1 描述失败: 大模型调用失败: 模型 v-scheduler/ollama-qa/minicpm-v4.6:latest 调用失败：timeout",
+          "scope": "scene_description",
+          "target_id": "1",
+          "detail": {
+            "model": "v-scheduler/ollama-qa/minicpm-v4.6:latest",
+            "base_url": "http://v-scheduler:8080/v1"
+          }
+        }
+      ]
     },
     "error": null
   }
 }</code></pre>
     <div class="note">
       <code>descriptions[].status</code>：<code>ok</code> / <code>skipped</code>（已有描述且未 <code>force</code>）/ <code>failed</code>。
-      单个场景失败不影响整体 job，job 仍为 <code>succeeded</code>。
+      单个场景失败不影响整体 job，job 仍为 <code>succeeded</code>；逐场景的失败根因见 <code>warnings[].detail</code>（与 job 级 <code>error.detail</code> 同结构）。
     </div>
   </section>
 
@@ -660,11 +671,27 @@ Content-Type: application/json
     <p><code>data.status</code>：<code>queued</code> → <code>running</code> → <code>succeeded</code> / <code>failed</code>。</p>
     <p><code>data.error</code> 结构：<code>{code, message, detail}</code>，<code>code</code> 取值：</p>
     <table>
-      <tr><th>job type</th><th>error.code</th></tr>
-      <tr><td><code>scene_detect</code></td><td><code>SCENE_DETECT_ERROR</code></td></tr>
-      <tr><td><code>structure</code></td><td><code>STRUCTURE_ERROR</code></td></tr>
-      <tr><td><code>describe</code></td><td><code>DESCRIBE_ERROR</code></td></tr>
+      <tr><th>job type</th><th>error.code</th><th>说明</th></tr>
+      <tr><td><code>scene_detect</code></td><td><code>SCENE_DETECT_ERROR</code></td><td>—</td></tr>
+      <tr><td><code>structure</code></td><td><code>STRUCTURE_ERROR</code></td><td>—</td></tr>
+      <tr><td><code>describe</code></td><td><code>DESCRIBE_ERROR</code></td><td>大模型调用失败（连接/超时/空响应等）</td></tr>
+      <tr><td><code>describe</code></td><td><code>DESCRIBE_MODEL_NOT_FOUND</code></td><td>配置的模型未在网关注册；据此可直接跳模型仓库下载</td></tr>
     </table>
+    <p><code>describe</code> 失败时 <code>detail</code> 为结构化对象（字段缺失即省略）：</p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td><code>model</code></td><td>string</td><td>实际请求的完整 model id，如 <code>v-scheduler/ollama-qa/minicpm-v4.6:latest</code>（定位缺哪个模型就靠它）</td></tr>
+      <tr><td><code>base_url</code></td><td>string</td><td>请求的网关地址（已脱敏）</td></tr>
+      <tr><td><code>status_code</code></td><td>int</td><td>上游 HTTP 状态码</td></tr>
+      <tr><td><code>upstream_code</code></td><td>string</td><td>上游错误码，如 <code>NOT_FOUND</code></td></tr>
+      <tr><td><code>upstream_message</code></td><td>string</td><td>上游错误描述，如 <code>unknown model or upstream</code></td></tr>
+      <tr><td><code>request_id</code></td><td>string</td><td>网关请求 ID，便于上游排查</td></tr>
+      <tr><td><code>failed_scenes</code> / <code>total_scenes</code></td><td>int</td><td>失败/总场景数</td></tr>
+    </table>
+    <div class="note">
+      <code>detail</code> 历史记录可能是纯文本，读取侧需同时容忍 <code>object</code> 与 <code>string</code>。
+      <code>message</code> 是一句话摘要（含模型名），完整信息在 <code>detail</code> 与日志里，<strong>不要再解析 message</strong>。
+    </div>
     <div class="note">
       <code>created_at</code> / <code>started_at</code> / <code>finished_at</code> 均为 Unix 秒（int），未发生时为 <code>null</code>。
       轮询间隔建议 2–5 秒。

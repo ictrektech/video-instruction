@@ -263,6 +263,20 @@ def run_worker(service: str) -> None:
         sys.exit(0)
 
 
+def _parse_error_detail(detail: str | None) -> dict | str | None:
+    """error_detail 历史数据是纯文本，结构化数据是 JSON 对象：能解析就解析回对象。"""
+    if isinstance(detail, str):
+        stripped = detail.strip()
+        if stripped.startswith("{"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return detail
+            if isinstance(parsed, dict):
+                return parsed
+    return detail
+
+
 def build_job_status_response(row: dict) -> JobStatusResponse:
     """从 jobs 行构建统一的任务状态响应。
 
@@ -280,7 +294,7 @@ def build_job_status_response(row: dict) -> JobStatusResponse:
         error = JobErrorDTO(
             code=row["error_code"],
             message=row["error_message"],
-            detail=row["error_detail"],
+            detail=_parse_error_detail(row["error_detail"]),
         )
 
     return JobStatusResponse(
