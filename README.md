@@ -22,6 +22,10 @@
 video-structure - 视频结构化服务：场景检测 + 九宫格抽帧 + 可选 VLM 场景描述，
 基于 Python 3.13 + FastAPI，任务队列用 Huey（SQLite），视频解码依赖 ffmpeg/ffprobe。
 
+## API 接入文档
+
+VOS 应用页提供[中文指南](src/shared/static/integration.html)与[English API reference](src/shared/static/integration.en.html)，包含完整提交、轮询、场景描述、下载和释放流程、请求/返回字段、权限与错误处理。运行服务的 `/docs` 和 `/openapi.json` 提供对应角色的完整 Schema。容器使用 `video-structure-detect:8910` / `video-structure:8911`；宿主端口默认 48910 / 48911，可在安装时修改。本轮仅更新文档源码，随下一次应用发版生效。
+
 ## 技术栈
 
 - **框架**: FastAPI + uvicorn

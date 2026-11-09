@@ -169,11 +169,11 @@
     <a href="#checklist">接入检查清单</a>
   </nav>
 
-  <main>
+  <main data-guide-lang="zh">
 
   <section id="overview">
     <h2>服务概览</h2>
-    <p>两个独立部署的 FastAPI 服务，各自内嵌 Huey worker，互不依赖；structure 可引用 scene-detect 的 job 结果。</p>
+    <p>两个 FastAPI 容器，各自内嵌 Huey worker。VOS 安装时必须共用 jobs/队列 SQLite 数据卷与 staging 卷，并位于同一宿主机；structure 通过 detect_job_id 读取检测任务结果。调用方可以在其他机器上，通过 URL 提供视频。</p>
 
     <table>
       <tr><th>服务</th><th>容器端口</th><th>宿主端口</th><th>职责</th></tr>
@@ -188,7 +188,7 @@
     </table>
 
     <div class="note">
-      服务是<strong>无状态</strong>的：不持有视频资产，产物由调用方主动下载（Pull），下载后显式释放。<br>
+      服务不接管原始视频资产；任务记录与暂存产物有保留期。产物由调用方主动下载（Pull），下载后显式释放。<br>
       视频由调用方以 <code>http(s)://</code> URL 提供（<strong>推荐</strong>），服务端只按 URL 流式读取，
       不依赖共享卷与路径一致性，跨容器/跨主机均可直接处理。详见 <a href="#video-path">video_path 规则</a>。
     </div>
@@ -196,11 +196,13 @@
 
   <section id="access">
     <h2>访问地址</h2>
+    <p><a href="integration.en.html" lang="en">English API reference</a> · <a href="/api/com.ictrek.video-structure/detect/docs">检测 Swagger</a> · <a href="/api/com.ictrek.video-structure/structure/docs">结构化 Swagger</a>。对应 OpenAPI JSON 将上述 docs 改为 openapi.json；两个服务的完整字段约束分别以各自 Schema 为准。</p>
+    <p>宿主机端口默认为 <code>http://&lt;HOST&gt;:48910</code> 和 <code>http://&lt;HOST&gt;:48911</code>，可在安装配置修改；不要把 Docker 网关 IP 固定为 172.17.0.1。服务自身没有用户或 API Key 校验，直接端口只应供可信网络使用。经 VOS 网关时遵循平台网关的访问策略。调用 describe 使用私有 V-Scheduler 模型时，在 model_cfg.api_key 提供有效的 V-Scheduler 访问 Key；厂商 Key 在 V-Scheduler 上游配置，不传给本服务。</p>
     <table>
       <tr><th>部署形态</th><th>Base URL</th></tr>
       <tr>
-        <td>VOS 平台 · 同机直连（推荐）</td>
-        <td><code>http://172.17.0.1:48910</code> / <code>http://172.17.0.1:48911</code></td>
+        <td>VOS 容器网络直连（推荐）</td>
+        <td><code>http://video-structure-detect:8910</code> / <code>http://video-structure:8911</code></td>
       </tr>
       <tr>
         <td>VOS 平台 · 经 Traefik 网关</td>
@@ -220,31 +222,31 @@
   </section>
 
   <section id="quickstart">
-    <h2>三步接入</h2>
+    <h2>五步接入</h2>
 
     <h3>1. 提交场景检测（video_path 传视频 URL）</h3>
-<pre><code>curl -X POST http://172.17.0.1:48910/api/v2/scenes/detect/jobs \
+<pre><code>curl -X POST http://video-structure-detect:8910/api/v2/scenes/detect/jobs \
   -H 'Content-Type: application/json' \
   -d '{"video_path": "http://172.17.0.1:38085/api/media/123/stream"}'</code></pre>
 
     <h3>2. 轮询结果，拿 <code>scenes</code></h3>
-<pre><code>curl http://172.17.0.1:48910/api/v2/scenes/detect/jobs/{job_id}
+<pre><code>curl http://video-structure-detect:8910/api/v2/scenes/detect/jobs/{job_id}
 # data.status = succeeded 时，data.result.scenes 即场景边界</code></pre>
 
     <h3>3. 提交结构化（video_path 与第 1 步保持一致）</h3>
-<pre><code>curl -X POST http://172.17.0.1:48911/api/v2/video/structure/jobs \
+<pre><code>curl -X POST http://video-structure:8911/api/v2/video/structure/jobs \
   -H 'Content-Type: application/json' \
   -d '{"video_path": "http://172.17.0.1:38085/api/media/123/stream", "detect_job_id": "{job_id}"}'
 # -> data.job_id 即下面的 {structure_job_id}</code></pre>
 
     <h3>4. 轮询 structure 状态（关键，别跳过）</h3>
-<pre><code>curl http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}
+<pre><code>curl http://video-structure:8911/api/v2/video/structure/jobs/{structure_job_id}
 # 等到 data.status == "succeeded"，且 data.artifact.describe_status != "pending"</code></pre>
 
     <h3>5. 下载产物 + 释放</h3>
 <pre><code>curl -o structure-{structure_job_id}.tar \
-  http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}/artifact
-curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_job_id}</code></pre>
+  http://video-structure:8911/api/v2/video/structure/jobs/{structure_job_id}/artifact
+curl -X DELETE http://video-structure:8911/api/v2/video/structure/jobs/{structure_job_id}</code></pre>
 
     <div class="note warn">
       <code>/artifact</code> <strong>不是</strong>轮询接口：它只在任务成功后一次性返回 tar，未就绪直接 <code>409</code>。
@@ -290,8 +292,8 @@ curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_jo
       "max_scene_count": 40
     },
     "scenes": [
-      {"scene_index": 0, "start_frame": 0,   "end_frame": 124, "start_time": 0.0,  "end_time": 4.96},
-      {"scene_index": 1, "start_frame": 125, "end_frame": 300, "start_time": 5.0,  "end_time": 12.0}
+      {"scene_index": 0, "start_frame": 0,   "end_frame": 124, "start_time": 0.0,  "end_time": 5.0},
+      {"scene_index": 1, "start_frame": 125, "end_frame": 300, "start_time": 5.0,  "end_time": 12.04}
     ],
     "warnings": [
       {
@@ -305,7 +307,7 @@ curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_jo
   }
 }</code></pre>
     <div class="note">
-      <code>scenes</code> 的 <code>end_frame</code> / <code>end_time</code> 为<strong>闭区间</strong>：
+      <code>scenes</code> 的 <code>end_frame</code> 为最后一帧（闭区间），<code>end_time</code> 为该帧结束后的边界（秒）：
       <code>end_time = (end_frame + 1) / fps</code>，与下一场景的 <code>start_time</code> 无缝衔接。
       常见 <code>warnings[].code</code>：<code>short_scenes_merged</code>、<code>scene_count_shrunk</code>、<code>scene_detect_fallback</code>。
     </div>
@@ -356,7 +358,7 @@ curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_jo
     "result": {
       "metadata": {"fps": 25.0, "total_frames": 12000, "duration": 480.0, "width": 1920, "height": 1080},
       "policy":  {"threshold": 29.0, "min_scene_len_sec": 3.5, "max_scene_count": 40},
-      "scenes":  [{"scene_index": 0, "start_frame": 0, "end_frame": 124, "start_time": 0.0, "end_time": 4.96}],
+      "scenes":  [{"scene_index": 0, "start_frame": 0, "end_frame": 124, "start_time": 0.0, "end_time": 5.0}],
       "warnings": []
     },
     "error": null
@@ -404,6 +406,7 @@ curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_jo
       <tr><td><code>grid_cols</code></td><td>int</td><td>否</td><td>默认 <code>3</code></td></tr>
     </table>
 
+    <p>至少提供一个非空 scenes 或 detect_job_id；同时传入时服务还会校验 detect_job_id 存在，建议只选一种方式。Job 状态还包含 <code>progress:string|null</code>（如 12/73）。Describe result 包含 <code>status:completed|partial</code>，逐场景失败为 partial，不能把 job 的 succeeded 当作全部场景成功。</p>
     <p><code>scenes[]</code> 元素（可直接回填 scene-detect 的 <code>result.scenes</code>）：</p>
     <table>
       <tr><th>字段</th><th>类型</th><th>说明</th></tr>
@@ -470,7 +473,7 @@ curl -X DELETE http://172.17.0.1:48911/api/v2/video/structure/jobs/{structure_jo
           "scene_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d-0",
           "scene_index": 0,
           "start_time": 0.0,
-          "end_time": 4.96,
+          "end_time": 5.0,
           "start_frame": 0,
           "end_frame": 124,
           "grid_image": "scene_001.jpg"
@@ -539,10 +542,10 @@ Content-Type: application/json
     <p><code>model_cfg</code> 字段：</p>
     <table>
       <tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
-      <tr><td><code>base_url</code></td><td>string</td><td>—</td><td>OpenAI 兼容地址，如 <code>http://host:21436/v1</code></td></tr>
+      <tr><td><code>base_url</code></td><td>string</td><td>—</td><td>OpenAI 兼容地址，如 <code>http://v-scheduler:8080/v1</code></td></tr>
       <tr><td><code>api_key</code></td><td>string</td><td><code>""</code></td><td>API Key</td></tr>
       <tr><td><code>model_name</code></td><td>string</td><td>—</td><td>模型名，如 <code>v-scheduler/ollama-qa/minicpm-v4.6:latest</code>（须与网关模型列表一致）</td></tr>
-      <tr><td><code>max_concurrency</code></td><td>int</td><td><code>5</code></td><td>并发描述的场景数</td></tr>
+      <tr><td><code>max_concurrency</code></td><td>int</td><td>继承服务端配置</td><td>并发描述的场景数；VOS 默认 20，独立代码默认 5</td></tr>
       <tr><td><code>request_timeout</code></td><td>int</td><td><code>120</code></td><td>单次请求超时秒数</td></tr>
     </table>
 
@@ -551,7 +554,7 @@ Content-Type: application/json
   "structure_job_id": "a1b2c3d4-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
   "force": false,
   "model_cfg": {
-    "base_url": "http://10.144.144.232:21436/v1",
+    "base_url": "http://v-scheduler:8080/v1",
     "api_key": "sk-xxx",
     "model_name": "v-scheduler/ollama-qa/minicpm-v4.6:latest",
     "max_concurrency": 20,
@@ -635,9 +638,7 @@ Content-Type: application/json
 }</code></pre>
 
     <div class="note warn">
-      <strong>业务错误也返回 HTTP 200</strong>：只有未捕获异常是 <code>500</code>、<code>/artifact</code> 是真实
-      <code>404/409/410</code>，其余错误一律 <code>HTTP 200 + code != 0</code>。
-      判断成败请<strong>只看 <code>code</code></strong>，不要只看 HTTP 状态码。
+      <strong>业务错误也返回 HTTP 200</strong>：ApiException 返回 <code>HTTP 200 + code != 0</code>；FastAPI 请求字段/JSON 校验失败返回 <code>422 {"detail":[...]}</code>；未捕获异常返回 <code>500</code>，artifact/释放接口还可能返回真实 <code>404/409/410</code>。先检查 HTTP 状态与 Content-Type，再检查业务 <code>code</code>；查询任务时还必须检查 <code>data.status</code> 和逐场景结果。
     </div>
 
     <p><code>GET /api/health</code> 响应体：</p>
@@ -834,7 +835,7 @@ Content-Type: application/json
   "scenes": [
     {
       "scene_id": "a1b2c3d4-...-0", "scene_index": 0,
-      "start_time": 0.0, "end_time": 4.96,
+      "start_time": 0.0, "end_time": 5.0,
       "start_frame": 0, "end_frame": 124,
       "grid_image": "scene_001.jpg"
     }
@@ -860,10 +861,10 @@ Content-Type: application/json
       <tr><td><code>STAGING_TTL_SEC</code></td><td><code>604800</code></td><td>staging 过期秒数（代码默认 21600）</td></tr>
       <tr><td><code>VIDEO_DETECT_SCALE_WIDTH</code></td><td><code>640</code></td><td>检测缩放宽度</td></tr>
       <tr><td><code>VIDEO_DECODE_THREADS</code></td><td><code>0</code></td><td><code>0</code>=auto</td></tr>
-      <tr><td><code>HUEY_WORKERS</code></td><td><code>2</code></td><td>worker 并发（代码默认 4）</td></tr>
+      <tr><td><code>--workers</code></td><td><code>2</code></td><td>VOS compose 的 worker CLI 参数；当前 HUEY_WORKERS 环境变量不会调整该参数。</td></tr>
       <tr><td><code>JOB_TTL_DAYS</code></td><td><code>7</code></td><td>job 行保留天数，<code>0</code>=不清理</td></tr>
       <tr><td><code>LLM_BASE_URL</code> / <code>LLM_API_KEY</code> / <code>LLM_MODEL_NAME</code></td><td>—</td><td>describe 默认模型，可被请求体 <code>model_cfg</code> 覆盖</td></tr>
-      <tr><td><code>LLM_MAX_CONCURRENCY</code> / <code>LLM_REQUEST_TIMEOUT</code></td><td><code>5</code> / <code>120</code></td><td>describe 并发与超时</td></tr>
+      <tr><td><code>LLM_MAX_CONCURRENCY</code> / <code>LLM_REQUEST_TIMEOUT</code></td><td><code>20</code> / <code>120</code></td><td>VOS describe 并发与超时，独立代码并发默认 5</td></tr>
     </table>
   </section>
 
@@ -871,10 +872,10 @@ Content-Type: application/json
     <h2>接入检查清单</h2>
     <div class="card">
       <ul>
-        <li>在调用方 <code>configs.yml</code> 或应用接入内配置，声明两个 base url（scene / structure），默认值填 <code>http://172.17.0.1:48910</code> 与 <code>:48911</code>。</li>
+        <li>在调用方 <code>configs.yml</code> 或应用接入内配置，声明两个 base url（scene / structure），默认值填 <code>http://video-structure-detect:8910</code> 与 <code>:48911</code>。</li>
         <li>把视频暴露成 <code>http(s)://</code> URL 传入，并确认该 URL 在<strong>服务端容器</strong>内可访问（VOS 同机经 <code>172.17.0.1</code>，不要写 <code>localhost</code>）。</li>
         <li>同一份视频<strong>固定使用同一个 URL</strong>（不要每次生成新签名），否则去重失效、重复计算。</li>
-        <li>判断成败<strong>只看响应体 <code>code</code></strong>：业务错误也是 HTTP <code>200</code>。</li>
+        <li>检查 HTTP 状态、业务 code、data.status 和逐场景结果；业务错误也可能是 HTTP 200，字段校验错误为 422。</li>
         <li>轮询间隔建议 2–5 秒；<code>/artifact</code> 返回 <code>409</code> 视为"继续等"，不要当失败。</li>
         <li>下载 tar 后立即 <code>DELETE</code> 释放 staging，避免占满共享卷。</li>
         <li>本服务无鉴权，VOS 内网可达；如需对外暴露请自行在网关加鉴权中间件。</li>

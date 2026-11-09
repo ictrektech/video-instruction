@@ -1,0 +1,182 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video Instruction · API reference</title><style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #656d76;
+    --line: #d8dee4;
+    --accent: #2f6feb;
+    --accent-soft: #eaf1ff;
+    --code-bg: #0d1117;
+    --code-text: #c9d1d9;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px 80px; }
+
+  header {
+    background: linear-gradient(135deg, #1f2937, #334155);
+    color: #fff;
+    padding: 44px 0 38px;
+    margin-bottom: 32px;
+  }
+  header .wrap { padding-bottom: 0; }
+  header h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: .3px; }
+  header p { margin: 0; color: #b9c3cf; font-size: 14px; }
+  .tags { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 12px;
+  }
+
+  .layout { display: grid; grid-template-columns: 210px 1fr; gap: 32px; align-items: start; }
+  nav {
+    position: sticky;
+    top: 24px;
+    font-size: 13px;
+    border-left: 2px solid var(--line);
+    padding-left: 14px;
+  }
+  nav a { display: block; color: var(--muted); text-decoration: none; padding: 5px 0; }
+  nav a:hover { color: var(--accent); }
+  nav b { display: block; margin: 14px 0 4px; color: var(--text); font-size: 12px; }
+
+  section { scroll-margin-top: 24px; margin-bottom: 40px; }
+  h2 {
+    font-size: 19px;
+    margin: 0 0 4px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  h3 { font-size: 15px; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  ul { margin: 10px 0; padding-left: 22px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-top: 14px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f2f4f7; font-weight: 600; white-space: nowrap; }
+  td code { white-space: nowrap; }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: #eef1f4;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.65;
+    margin: 12px 0 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+  .method {
+    display: inline-block;
+    min-width: 54px;
+    text-align: center;
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .post { background: #1a7f37; }
+  .get { background: #0969da; }
+  .del { background: #cf222e; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    margin-top: 12px;
+    font-size: 13.5px;
+  }
+  .note.warn { border-color: var(--warn); background: #fff8e6; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  .kv { font-size: 13.5px; }
+  .kv div { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .kv span:last-child { color: var(--muted); text-align: right; }
+
+  footer { color: var(--muted); font-size: 12.5px; text-align: center; margin-top: 48px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; border-left: 0; border-top: 2px solid var(--line); padding: 12px 0 0; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+</style></head><body>
+<header><div class="wrap"><h1>Video Instruction · API reference</h1><p>Scene detection, video structure and optional vision descriptions.</p></div></header>
+<div class="wrap"><section data-guide-lang="en">
+<nav aria-label="Contents"><a href="integration.html" lang="zh-CN">中文指南</a><a href="#access">Endpoints and identity</a><a href="#detect">Detection</a><a href="#jobs">Jobs</a><a href="#structure">Structure and artifacts</a><a href="#describe">Descriptions</a><a href="#errors">Errors and retries</a><a href="#workflow">Complete workflow</a><a href="#storage">Storage and configuration</a></nav>
+<h2 id="access">Endpoints and identity</h2>
+<p>In the VOS Docker network use <code>http://video-structure-detect:8910</code> for detection and <code>http://video-structure:8911</code> for structure/description. External host ports default to <code>http://&lt;HOST&gt;:48910</code> / <code>:48911</code> and can be changed during installation. Do not assume a fixed Docker bridge IP. The service itself has no user/API-key authentication; direct ports require a trusted network. VOS gateway access follows platform policy.</p>
+<p>VOS proxy prefixes are <code>/api/com.ictrek.video-structure/detect</code> and <code>/api/com.ictrek.video-structure/structure</code>. Append the API paths below. Each service exposes <code>GET /api/health</code>, <code>/docs</code> and <code>/openapi.json</code>. <a href="/api/com.ictrek.video-structure/detect/docs">Detection Swagger</a> · <a href="/api/com.ictrek.video-structure/structure/docs">Structure Swagger</a>. Complete field constraints are in the installed service's OpenAPI schemas.</p>
+<p>Health returns <code>{"code":0,"msg":"…","data":{"status":"ok","service":"scene-detection"}}</code> (or service <code>structure</code>). Health only establishes API availability, not worker completion or model availability. Configure caller base URLs explicitly; declaring an application dependency does not inject them.</p>
+<h2 id="detect">Detection request and result</h2>
+<p><code>POST /api/v1/scenes/detect</code> is synchronous. <code>POST /api/v2/scenes/detect/jobs</code> accepts the same JSON asynchronously. Required <code>video_path:string</code> is an HTTP(S) video URL or a path readable inside the server container. Optional nullable fields: <code>threshold:number</code>, <code>max_scenes:integer</code>, <code>scale_width:integer</code>, <code>decode_threads:integer</code>. Omitted values use server policy. Zero means unlimited scenes, no scaling or automatic decode threads respectively for the last three fields; it is not equivalent to omission.</p>
+<p>Synchronous success is <code>{code:0,msg:string,data:DetectResult}</code>. DetectResult contains <code>metadata:{fps:number,total_frames:integer,duration:number,width:integer,height:integer}</code>, <code>policy:{threshold:number,min_scene_len_sec:number,max_scene_count:integer}</code>, <code>scenes:SceneBoundary[]</code>, <code>warnings:Warning[]</code> and <code>elapsed_sec:number</code>. Each boundary has <code>scene_index:integer,start_frame:integer,end_frame:integer,start_time:number,end_time:number</code>. Times are seconds; end_frame is inclusive, while end_time is the boundary after the last frame: <code>(end_frame+1)/fps</code>. A warning has string <code>code,message,scope,target_id</code>. Read actual policy rather than assuming a fixed threshold; duration-based defaults vary.</p>
+<h2 id="jobs">Submission, polling and reuse</h2>
+<p>Detection, structure and describe submissions return <code>{"code":0,"msg":"…","data":{"job_id":"…","status":"queued","poll_url":"/api/…/jobs/…"}}</code>. Resolve poll_url against that service's base URL, preserving a VOS proxy prefix when used. Poll <code>GET /api/v2/scenes/detect/jobs/{job_id}</code>, <code>GET /api/v2/video/structure/jobs/{job_id}</code> or <code>GET /api/v2/video/describe/jobs/{job_id}</code>, normally every 2–5 seconds with a bounded deadline.</p>
+<p>Common data fields: <code>job_id:string,type:string,status:queued|running|succeeded|failed,created_at:integer|null,started_at:integer|null,finished_at:integer|null,attempt:integer,progress:string|null,result:object|null,error:JobError|null</code>. Timestamps are Unix seconds. JobError has nullable <code>code:string,message:string,detail:object|string</code>. Historical detail strings remain readable. Detection results contain metadata, policy, scenes and warnings (no synchronous elapsed_sec). Structure/description result shapes are documented below. Failed jobs can still return HTTP 200 with outer code 0; inspect status/error.</p>
+<p>For the same video_hash and job type, queued/running jobs are reused. URL hashes use the token-redacted URL, not video contents; local files use sampled MD5. Keep video URLs stable, but replace the URL when content changes. Changing non-redacted signature parameters changes identity. Description reuse uses structure_job_id. The API has no general cancel or retry endpoint: DELETE below releases finished structure artifacts, not an active calculation.</p>
+<h2 id="structure">Structure request, result and artifact release</h2>
+<p><code>POST /api/v2/video/structure/jobs</code>: required <code>video_path:string</code>; provide either nonempty <code>scenes:SceneBoundaryInput[]</code> or <code>detect_job_id:string</code>. Use the same video as detection. A referenced detection must finish successfully before structure can use its result. If both are provided, the referenced job is still checked; choose one mode. Boundary input requires integer start_frame/end_frame; scene_index defaults to 0 and start_time/end_time to 0.0. Optional <code>frame_grid:boolean=true,grid_rows:integer=3,grid_cols:integer=3</code>.</p>
+<p>Successful structure result: <code>video_hash:string,metadata:VideoMetadata,staging_dir:string,scenes:Scene[],warnings:Warning[],stage_timings:object&lt;string,number&gt;,elapsed_sec:number</code>. VideoMetadata contains video_path, fps, duration, width, height, codec, bitrate, has_audio and total_frames. Scene contains scene_id, scene_index, start_time, end_time, start_frame, end_frame and nullable grid_image. Warning additionally supports structured detail. Paths are container paths, not downloadable URLs.</p>
+<p>Structure polling adds <code>released:boolean</code> and nullable <code>artifact:{describe_status:none|pending|succeeded|failed,total_bytes:integer,files:[{path:string,size:integer}]}</code>. Artifact is null until succeeded, during description freezing, or after release. Download only after artifact is available.</p>
+<p><code>GET /api/v2/video/structure/jobs/{job_id}/artifact</code> returns <code>200 application/x-tar</code>, with <code>X-Artifact-Describe-Status: none|succeeded|failed</code>. This is a binary download, not JSON or a polling request. Errors return JSON with real HTTP <code>404</code> (unknown/wrong-type job), <code>409</code> (not ready/description pending), or <code>410</code> (staging gone). Tar contains manifest.json, grids/*.jpg and optional descriptions.json; metadata.json is not separately packaged.</p>
+<p><code>DELETE /api/v2/video/structure/jobs/{job_id}</code> releases staging after download and returns <code>{"code":0,"msg":"…","data":{"job_id":"…","released":true}}</code>. Releasing an already released terminal job is idempotent. Queued/running jobs return 409/code10002. Verify the downloaded tar before releasing; released artifacts cannot be downloaded again.</p>
+<h2 id="describe">Vision descriptions and V-Scheduler</h2>
+<p><code>POST /api/v2/video/describe/jobs</code>: required <code>structure_job_id:string</code> of a successful, unreleased structure job; optional <code>force:boolean=false</code> and <code>model_cfg:object|null</code>. force requests fresh descriptions rather than keeping existing ones. Every model_cfg field is optional/nullable and falls back to server configuration: <code>base_url:string,api_key:string,model_name:string,max_concurrency:integer,request_timeout:integer</code> (seconds). Defaults in VOS are <code>http://v-scheduler:8080/v1</code>, empty key, configured vision model, concurrency20 and timeout120; standalone settings can differ.</p>
+<p>Copy the complete vision-capable model ID from V-Scheduler. For a private model, api_key must be a valid V-Scheduler access key; the upstream vendor key belongs in V-Scheduler provider settings. Public model access follows V-Scheduler public-model policy. An arbitrary chat model without image support cannot describe grids.</p>
+<p>Description result contains <code>structure_job_id:string,video_hash:string,descriptions:Description[],warnings:Warning[],status:completed|partial</code>. Each Description has <code>scene_index:integer,grid_image:string,description:string,status:ok|skipped|failed,error:string|null</code>. A succeeded job can be partial: inspect each scene and warnings. Job-level error codes include SCENE_DETECT_ERROR, STRUCTURE_ERROR, DESCRIBE_ERROR and DESCRIBE_MODEL_NOT_FOUND. Description error/warning detail can include model, base_url, status_code, upstream_code, upstream_message, request_id, failed_scenes and total_scenes. Do not parse message text to determine the failing model.</p>
+<h2 id="errors">Errors, validation and safe retries</h2>
+<p>Normal business errors return <code>HTTP200 {code:integer,msg:string,data:null}</code>, while success uses code0. Missing/invalid JSON fields use FastAPI <code>422 {detail:[...]}</code>; unexpected errors use HTTP500. Artifact/release routes also use real HTTP errors. Check HTTP status and Content-Type, then envelope code, then job status and individual scene results. Never treat an HTTP200 failed job as success.</p>
+<p>Business codes: <code>10001</code> missing object/staging; <code>10002</code> unsupported or not-ready operation; <code>10004</code> invalid argument; <code>70101</code> missing local video; <code>70201</code> unknown job; <code>10000</code> downstream service failure; <code>99999</code> unexpected failure. Correct 422/invalid fields instead of retrying unchanged. For 409 poll status before downloading again; 410 requires regenerating artifacts. After submission timeouts reconcile using the returned job ID when available; pending-job reuse is not a permanent idempotency guarantee.</p>
+<h2 id="workflow">Complete detection → structure → download workflow</h2>
+<pre>export DETECT='http://video-structure-detect:8910'
+export STRUCTURE='http://video-structure:8911'
+# VIDEO_URL must be reachable by both workers and remain valid through the job
+curl --fail-with-body "$DETECT/api/v2/scenes/detect/jobs" \
+  -H 'Content-Type: application/json' -d '{"video_path":"http://media-service/video.mp4"}'
+# Save data.job_id as DETECT_ID; poll until data.status=succeeded
+curl --fail-with-body "$DETECT/api/v2/scenes/detect/jobs/$DETECT_ID"
+curl --fail-with-body "$STRUCTURE/api/v2/video/structure/jobs" \
+  -H 'Content-Type: application/json' \
+  -d "{\"video_path\":\"http://media-service/video.mp4\",\"detect_job_id\":\"$DETECT_ID\"}"
+# Save data.job_id as STRUCTURE_ID; poll until succeeded and artifact is non-null
+curl --fail-with-body "$STRUCTURE/api/v2/video/structure/jobs/$STRUCTURE_ID"
+curl --fail-with-body -o structure.tar "$STRUCTURE/api/v2/video/structure/jobs/$STRUCTURE_ID/artifact"
+# Verify download and extract before releasing
+curl --fail-with-body -X DELETE "$STRUCTURE/api/v2/video/structure/jobs/$STRUCTURE_ID"</pre>
+<h2 id="storage">Video access, storage and configuration</h2>
+<p>Prefer HTTP(S) video streams reachable from both server containers. localhost points to the container itself. Return actual video bytes, preferably supporting Range; URL validity must include queueing and processing. An absolute path must exist inside both containers; relative paths resolve below DATA_BASE_PATH (VOS default /photos). URL submission does not preflight the media: read failures appear in job errors.</p>
+<p>VOS detection and structure containers must share jobs/queue SQLite and staging volumes on the same host. They do not own the original video; callers own downloads. VOS defaults: STAGING_BASE_PATH=/data/video-structure-cache, STAGING_TTL_SEC=604800 (standalone code default21600), JOB_TTL_DAYS=7 (0 disables cleanup), VIDEO_DETECT_SCALE_WIDTH=640, VIDEO_DECODE_THREADS=0. Worker concurrency is the compose CLI <code>--workers 2</code>; the HUEY_WORKERS environment variable does not currently override it. Describe defaults can be changed with LLM_BASE_URL, LLM_API_KEY, LLM_MODEL_NAME, LLM_MAX_CONCURRENCY and LLM_REQUEST_TIMEOUT. Keep keys out of logs and shared documents.</p>
+</section></div>
+</body></html>
