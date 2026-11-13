@@ -25,3 +25,5 @@ One app with two containers (scene-detection + structure) sharing the `data/` vo
 ## Configuration
 
 Collected at install time via `configs.yml`, keeping only the essentials: the two host ports (default 48910/48911) and the default LLM config for describe (base URL / key / model name). Everything else uses built-in server defaults.
+
+On VOS with Traefik v3, opening the app root directly in a browser redirects to its VOS page. Embedded pages and API requests use their existing routes.
