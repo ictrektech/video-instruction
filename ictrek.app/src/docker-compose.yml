@@ -143,7 +143,7 @@ x-structure-base: &structure-base
     - "traefik.http.middlewares.video-structure-web-strip.stripprefix.prefixes=/app/com.ictrek.video-structure"
     - "traefik.http.services.video-structure-web.loadbalancer.server.port=8911"
     # ---- 顶层直接打开兜底：重定向到平台 hash 路由 ----
-    - "traefik.http.routers.video-structure-top-open.rule=PathPrefix(`/app/com.ictrek.video-structure`) && HeadersRegexp(`Sec-Fetch-Dest`, `document`)"
+    - "traefik.http.routers.video-structure-top-open.rule=(Path(`/app/com.ictrek.video-structure`) || Path(`/app/com.ictrek.video-structure/`)) && HeaderRegexp(`Sec-Fetch-Dest`, `document`)"
     - "traefik.http.routers.video-structure-top-open.priority=1000"
     - "traefik.http.routers.video-structure-top-open.service=video-structure-web"
     - "traefik.http.routers.video-structure-top-open.middlewares=video-structure-top-open-redirect"
